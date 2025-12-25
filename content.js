@@ -77,7 +77,7 @@ const handleStorePage = () => {
 
   for (const disclosureDiv of disclosureDivs) {
     const headers = Array.from(disclosureDiv.querySelectorAll("h2"));
-    
+
     const aiHeader = headers.find((h) =>
       h.textContent.includes("AI Generated Content Disclosure")
     );
@@ -108,7 +108,8 @@ const handleStorePage = () => {
 
         banner.innerHTML = `<div style="font-size: 16px; color: #ff4444; margin-bottom: 5px;">AI Disclosure</div><div style="font-size: 13px;">${details}</div>`;
         Object.assign(banner.style, {
-          background: "linear-gradient( 90deg, rgba(0,0,0,0.5) 5%,rgba(0,0,0,0.65) 95%)",
+          background:
+            "linear-gradient( 90deg, rgba(0,0,0,0.5) 5%,rgba(0,0,0,0.65) 95%)",
           border: "1px solid #ff4444",
           padding: "16px",
           marginBottom: "8px",
@@ -152,10 +153,118 @@ const initSearchPageObserver = () => {
     .forEach((row) => observer.observe(row));
 };
 
+const addSlopModePanel = () => {
+  const optionsContainer = document.getElementById("additional_search_options");
+  if (!optionsContainer || document.getElementById("slop-mode-filter")) return;
+
+  const modes = [
+    { value: "hide", label: "Hide AI content" },
+    { value: "highlight", label: "Highlight AI content" },
+    { value: "text", label: "Show AI label" },
+  ];
+
+  const panelDiv = document.createElement("div");
+  panelDiv.className = "block search_collapse_block";
+  panelDiv.id = "slop-mode-filter";
+  panelDiv.setAttribute("data-collapse-name", "slop_filter");
+  panelDiv.setAttribute("data-gpnav", "rows");
+  panelDiv.setAttribute("data-gpfocus", "group");
+
+  const header = document.createElement("div");
+  header.setAttribute(
+    "data-panel",
+    '{"focusable":true,"clickOnActivate":true}'
+  );
+  header.setAttribute("role", "button");
+  header.className = "block_header labs_block_header";
+  const headerText = document.createElement("div");
+  headerText.textContent = "Narrow by AI Usage";
+  header.appendChild(headerText);
+
+  const content = document.createElement("div");
+  content.className = "block_content block_content_inner";
+
+  header.addEventListener("click", () => {
+    if (content.style.display === "none") {
+      content.style.display = "block";
+    } else {
+      content.style.display = "none";
+    }
+  });
+
+  modes.forEach((mode) => {
+    const row = document.createElement("div");
+    row.className =
+      "tab_filter_control_row " + (currentMode === mode.value ? "checked" : "");
+    row.setAttribute("data-param", "slop_mode");
+    row.setAttribute("data-value", mode.value);
+    row.setAttribute("data-clientside", "1");
+
+    const control = document.createElement("span");
+    control.setAttribute(
+      "data-panel",
+      '{"focusable":true,"clickOnActivate":true}'
+    );
+    control.setAttribute("role", "button");
+    control.className =
+      "tab_filter_control tab_filter_control_include " +
+      (currentMode === mode.value ? "checked" : "");
+    control.setAttribute("data-param", "slop_mode");
+    control.setAttribute("data-value", mode.value);
+    control.setAttribute("data-clientside", "1");
+    control.setAttribute("data-gpfocus", "item");
+
+    const labelContainer = document.createElement("span");
+    labelContainer.className = "tab_filter_label_container";
+
+    const checkbox = document.createElement("span");
+    checkbox.className = "tab_filter_control_checkbox";
+
+    const label = document.createElement("span");
+    label.className = "tab_filter_control_label";
+    label.textContent = mode.label;
+
+    labelContainer.appendChild(checkbox);
+    labelContainer.appendChild(label);
+    control.appendChild(labelContainer);
+    row.appendChild(control);
+    content.appendChild(row);
+
+    control.addEventListener("click", () => {
+      chrome.storage.sync.set({ slopMode: mode.value }, () => {
+        window.location.reload();
+      });
+    });
+  });
+
+  panelDiv.appendChild(header);
+  panelDiv.appendChild(content);
+
+  const children = optionsContainer.children;
+  if (children.length >= 2) {
+    optionsContainer.insertBefore(panelDiv, children[2]);
+  } else {
+    optionsContainer.appendChild(panelDiv);
+  }
+};
+
+const observeAdditionalOptions = () => {
+  const optionsContainer = document.getElementById("additional_search_options");
+  if (optionsContainer) {
+    addSlopModePanel();
+    const observer = new MutationObserver(() => {
+      if (!document.getElementById("slop-mode-filter")) {
+        addSlopModePanel();
+      }
+    });
+    observer.observe(optionsContainer, { childList: true, subtree: true });
+  }
+};
+
 chrome.storage.sync.get(["slopMode"], (res) => {
   if (res.slopMode) currentMode = res.slopMode;
-console.log("Slop mode set to:", currentMode);
-console.log("Current URL:", window.location.href);
+  console.log("Slop mode set to:", currentMode);
+  console.log("Current URL:", window.location.href);
   if (window.location.href.includes("/app/")) {
     handleStorePage();
     const observer = new MutationObserver(() => handleStorePage());
@@ -164,5 +273,6 @@ console.log("Current URL:", window.location.href);
     }
   } else if (window.location.href.includes("/search")) {
     initSearchPageObserver();
+    observeAdditionalOptions();
   }
 });
