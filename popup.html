@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body {
+      width: 220px;
+      background-color: #1b2838; /* steam blue-black */
+      color: #c7d5e0;
+      font-family: "Motiva Sans", sans-serif;
+      padding: 10px;
+      user-select: none;
+    }
+    h3 { margin-top: 0; color: #66c0f4; border-bottom: 1px solid #3c4d5d; padding-bottom: 5px; }
+    .option {
+      display: flex;
+      align-items: center;
+      margin: 10px 0;
+      cursor: pointer;
+    }
+    input[type="radio"] { margin-right: 10px; accent-color: #66c0f4; }
+    .desc { font-size: 11px; color: #8f98a0; margin-left: 24px; }
+  </style>
+</head>
+<body>
+  <h3> AI Detection Settings</h3>
+  
+  <label class="option">
+    <input type="radio" name="mode" value="highlight">
+    <span>Highlight </span>
+  </label>
+  <div class="desc">Red border + banner.</div>
+
+  <label class="option">
+    <input type="radio" name="mode" value="text">
+    <span>Text Only (Default)</span>
+  </label>
+  <div class="desc">Subtle [AI CONTENT USED] tag.</div>
+
+  <label class="option">
+    <input type="radio" name="mode" value="hide">
+    <span>Nuke It</span>
+  </label>
+  <div class="desc">Remove from results entirely.</div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

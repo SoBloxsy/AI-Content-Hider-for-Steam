@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "AI Generated Content Filter for Steam",
+  "version": "3.2",
+  "description": "Configurable AI Generated Content Filter for Steam",
+  "permissions": ["storage"],
+    "icons": {
+    "16": "icon128.png",
+    "48": "icon128.png",
+    "128": "icon128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icon16.png", 
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://store.steampowered.com/app/*",
+        "*://store.steampowered.com/search*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
