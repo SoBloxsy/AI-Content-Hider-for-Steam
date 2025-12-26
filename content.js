@@ -1,3 +1,4 @@
+// #a30100 is the red used in the logo
 let currentMode = "highlight";
 
 chrome.storage.onChanged.addListener((changes) => {
@@ -41,7 +42,7 @@ const applySlopStyle = (rowElement, mode) => {
     badge.style.marginLeft = "10px";
 
     if (mode === "highlight") {
-      badge.style.color = "#ff4444";
+      badge.style.color = "#a30100";
     } else {
       badge.style.color = "#888"; // subtler for text mode
     }
@@ -49,7 +50,7 @@ const applySlopStyle = (rowElement, mode) => {
   }
 
   if (mode === "highlight") {
-    rowElement.style.border = "2px solid #ff0000";
+    rowElement.style.border = "2px solid #a30100";
     rowElement.style.background = "rgba(50, 0, 0, 0.8)";
   }
 };
@@ -106,11 +107,13 @@ const handleStorePage = () => {
         const banner = document.createElement("div");
         banner.id = "slop-warning-banner";
 
-        banner.innerHTML = `<div style="font-size: 16px; color: #ff4444; margin-bottom: 5px;">AI Disclosure</div><div style="font-size: 13px;">${details}</div>`;
+        banner.innerHTML = `<img src="${chrome.runtime.getURL(
+          "icons/iconsvg.svg"
+        )}" style="width: 32px; height: 32px; float: right; margin-left: 10px; margin-bottom: 5px;"><div style="font-size: 16px; color: #a30100; margin-bottom: 5px;">AI Disclosure</div><div style="font-size: 13px;">${details}</div>`;
         Object.assign(banner.style, {
           background:
             "linear-gradient( 90deg, rgba(0,0,0,0.5) 5%,rgba(0,0,0,0.65) 95%)",
-          border: "1px solid #ff4444",
+          border: "1px solid #a30100",
           padding: "16px",
           marginBottom: "8px",
           color: "#c6d4df",
@@ -166,6 +169,7 @@ const addSlopModePanel = () => {
   const panelDiv = document.createElement("div");
   panelDiv.className = "block search_collapse_block";
   panelDiv.id = "slop-mode-filter";
+  panelDiv.style.position = "relative";
   panelDiv.setAttribute("data-collapse-name", "slop_filter");
   panelDiv.setAttribute("data-gpnav", "rows");
   panelDiv.setAttribute("data-gpfocus", "group");
@@ -177,6 +181,16 @@ const addSlopModePanel = () => {
   );
   header.setAttribute("role", "button");
   header.className = "block_header labs_block_header";
+  header.style.position = "relative";
+  const logo = document.createElement("img");
+  logo.src = chrome.runtime.getURL("icons/iconsvg.svg");
+  logo.style.width = "24px";
+  logo.style.height = "24px";
+  logo.style.position = "absolute";
+  logo.style.right = "1px";
+  logo.style.top = "50%";
+  logo.style.transform = "translateY(-50%)";
+  header.appendChild(logo);
   const headerText = document.createElement("div");
   headerText.textContent = "Narrow by AI Usage";
   header.appendChild(headerText);
