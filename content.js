@@ -14,10 +14,13 @@ const checkUrlForSlop = async (appId) => {
 
   const storageKey = `slop_cache_${appId}`;
   const cached = await new Promise((resolve) =>
-    chrome.storage.local.get([storageKey], (res) => resolve((res || {})[storageKey]))
+    chrome.storage.local.get([storageKey], (res) =>
+      resolve((res || {})[storageKey])
+    )
   );
   if (cached !== undefined) {
     memoryCache.set(appId, cached);
+    console.log(`AppID ${appId} isSlop:`, cached);
     return cached;
   }
 
@@ -28,6 +31,7 @@ const checkUrlForSlop = async (appId) => {
     const text = await response.text();
     const isSlop = text.includes("AI Generated Content Disclosure");
     memoryCache.set(appId, isSlop);
+    console.log(`AppID ${appId} isSlop:`, isSlop);
     chrome.storage.local.set({ [storageKey]: isSlop });
     return isSlop;
   } catch (e) {
@@ -36,7 +40,11 @@ const checkUrlForSlop = async (appId) => {
 };
 
 const applySlopStyle = (rowElement, mode) => {
-  const title = rowElement.querySelector(".title");
+  const title =
+    rowElement.querySelector(".title") ||
+    rowElement.querySelector(".tab_item_name") ||
+    rowElement.querySelector(".match_name") ||
+    rowElement.querySelector(".name");
 
   if (mode === "hide") {
     rowElement.style.display = "none";
@@ -45,6 +53,9 @@ const applySlopStyle = (rowElement, mode) => {
 
   // Common badge logic
   if (title && !title.querySelector(".slop-badge")) {
+    title.style.overflow = "visible";
+    title.style.whiteSpace = "normal";
+
     const badge = document.createElement("span");
     badge.className = "slop-badge";
     badge.innerText = " [AI CONTENT USED]";
@@ -62,7 +73,11 @@ const applySlopStyle = (rowElement, mode) => {
 
   if (mode === "highlight") {
     rowElement.style.border = "2px solid #a30100";
-    rowElement.style.background = "rgba(50, 0, 0, 0.8)";
+    rowElement.style.setProperty(
+      "background",
+      "rgba(50, 0, 0, 0.8)",
+      "important"
+    );
   }
 };
 
@@ -151,19 +166,22 @@ const initSearchPageObserver = () => {
 
   const listObserver = new MutationObserver(() => {
     document
-      .querySelectorAll(".search_result_row:not([data-slop-checked])")
+      .querySelectorAll(
+        ".search_result_row:not([data-slop-checked]), .tab_item:not([data-slop-checked])"
+      )
       .forEach((row) => {
         observer.observe(row);
       });
   });
 
   const searchContainer = document.getElementById("search_results");
-  if (searchContainer) {
-    listObserver.observe(searchContainer, { childList: true, subtree: true });
+  const targetNode = searchContainer || document.body;
+  if (targetNode) {
+    listObserver.observe(targetNode, { childList: true, subtree: true });
   }
 
   document
-    .querySelectorAll(".search_result_row")
+    .querySelectorAll(".search_result_row, .tab_item")
     .forEach((row) => observer.observe(row));
 };
 
@@ -297,7 +315,7 @@ chrome.storage.sync.get(["slopMode"], (res) => {
     if (document.body) {
       observer.observe(document.body, { childList: true, subtree: true });
     }
-  } else if (window.location.href.includes("/search")) {
+  } else {
     initSearchPageObserver();
     observeAdditionalOptions();
   }
