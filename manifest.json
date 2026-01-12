@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AI Generated Content Filter for Steam",
-  "version": "3.2.1",
+  "version": "3.2.5",
   "description": "Take back control of your Steam browsing experience.",
   "permissions": ["storage"],
   "icons": {

@@ -11,6 +11,16 @@ const memoryCache = new Map();
 
 const checkUrlForSlop = async (appId) => {
   if (memoryCache.has(appId)) return memoryCache.get(appId);
+
+  const storageKey = `slop_cache_${appId}`;
+  const cached = await new Promise((resolve) =>
+    chrome.storage.local.get([storageKey], (res) => resolve((res || {})[storageKey]))
+  );
+  if (cached !== undefined) {
+    memoryCache.set(appId, cached);
+    return cached;
+  }
+
   try {
     const response = await fetch(
       `https://store.steampowered.com/app/${appId}/`
@@ -18,6 +28,7 @@ const checkUrlForSlop = async (appId) => {
     const text = await response.text();
     const isSlop = text.includes("AI Generated Content Disclosure");
     memoryCache.set(appId, isSlop);
+    chrome.storage.local.set({ [storageKey]: isSlop });
     return isSlop;
   } catch (e) {
     return false;
@@ -182,15 +193,16 @@ const addSlopModePanel = () => {
   header.setAttribute("role", "button");
   header.className = "block_header labs_block_header";
   header.style.position = "relative";
-  const logo = document.createElement("img");
-  logo.src = chrome.runtime.getURL("icons/iconsvg.svg");
-  logo.style.width = "24px";
-  logo.style.height = "24px";
-  logo.style.position = "absolute";
-  logo.style.right = "1px";
-  logo.style.top = "50%";
-  logo.style.transform = "translateY(-50%)";
-  header.appendChild(logo);
+  // const logo = document.createElement("img");
+  // logo.src = chrome.runtime.getURL("icons/iconsvg.svg");
+  // logo.style.width = "24px";
+  // logo.style.height = "24px";
+  // logo.style.position = "absolute";
+  // logo.style.right = "1px";
+  // logo.style.top = "50%";
+  // logo.style.transform = "translateY(-50%)";
+  // header.appendChild(logo);
+  // might add logo later
   const headerText = document.createElement("div");
   headerText.textContent = "Narrow by AI Usage";
   header.appendChild(headerText);

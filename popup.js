@@ -13,3 +13,21 @@ document.querySelectorAll('input[name="mode"]').forEach((input) => {
     });
   });
 });
+
+document.getElementById('clear-cache')?.addEventListener('click', (e) => {
+  chrome.storage.local.get(null, (items) => {
+    const keys = Object.keys(items).filter((key) => key.startsWith('slop_cache_'));
+    chrome.storage.local.remove(keys, () => {
+      const btn = e.target;
+      const originalText = btn.innerText;
+      btn.innerText = 'Cleared!';
+      setTimeout(() => {
+        btn.innerText = originalText;
+      }, 1000);
+
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs[0]) chrome.tabs.reload(tabs[0].id);
+      });
+    });
+  });
+});
