@@ -1,9 +1,14 @@
 // #a30100 is the red used in the logo
+// #00a357 is a green color that could be used for "no AI content detected" messages
+// hi person reading this :)
+
+console.log( '%c[AI Disclosure]%c', 'color:#a30100; font-weight:bold;', '', "Content script loaded." );
+
 let currentMode = "highlight";
 
 chrome.storage.onChanged.addListener((changes) => {
-  if (changes.slopMode) {
-    currentMode = changes.slopMode.newValue;
+  if (changes.filterMode) {
+    currentMode = changes.filterMode.newValue;
   }
 });
 
@@ -12,26 +17,26 @@ const memoryCache = new Map();
 const checkUrlForSlop = async (appId) => {
   if (memoryCache.has(appId)) return memoryCache.get(appId);
 
-  const storageKey = `slop_cache_${appId}`;
+  const storageKey = `slop_cache_${appId}`; 
   const cached = await new Promise((resolve) =>
     chrome.storage.local.get([storageKey], (res) =>
-      resolve((res || {})[storageKey])
-    )
+      resolve((res || {})[storageKey]),
+    ),
   );
   if (cached !== undefined) {
     memoryCache.set(appId, cached);
-    console.log(`AppID ${appId} isSlop:`, cached);
+    console.log('%c[AI Disclosure]%c', 'color:#a30100; font-weight:bold;','',`AppID ${appId} UseAI:`, cached);
     return cached;
   }
 
   try {
     const response = await fetch(
-      `https://store.steampowered.com/app/${appId}/`
+      `https://store.steampowered.com/app/${appId}/`,
     );
     const text = await response.text();
     const isSlop = text.includes("AI Generated Content Disclosure");
     memoryCache.set(appId, isSlop);
-    console.log(`AppID ${appId} isSlop:`, isSlop);
+    console.log('%c[AI Disclosure]%c', 'color:#a30100; font-weight:bold;','',`AppID ${appId} UseAI:`, isSlop);
     chrome.storage.local.set({ [storageKey]: isSlop });
     return isSlop;
   } catch (e) {
@@ -46,29 +51,34 @@ const applySlopStyle = (rowElement, mode) => {
     rowElement.querySelector(".match_name") ||
     rowElement.querySelector(".name");
 
+  rowElement.style.display = "";
+
   if (mode === "hide") {
     rowElement.style.display = "none";
     return;
   }
 
   // Common badge logic
-  if (title && !title.querySelector(".slop-badge")) {
+  let badge = title ? title.querySelector(".slop-badge") : null;
+  if (title && !badge) {
     title.style.overflow = "visible";
     title.style.whiteSpace = "normal";
 
-    const badge = document.createElement("span");
+    badge = document.createElement("span");
     badge.className = "slop-badge";
     badge.innerText = " [AI CONTENT USED]";
     badge.style.fontWeight = "bold";
     badge.style.fontSize = "12px";
     badge.style.marginLeft = "10px";
+    title.appendChild(badge);
+  }
 
+  if (badge) {
     if (mode === "highlight") {
       badge.style.color = "#a30100";
     } else {
       badge.style.color = "#888"; // subtler for text mode
     }
-    title.appendChild(badge);
   }
 
   if (mode === "highlight") {
@@ -76,8 +86,11 @@ const applySlopStyle = (rowElement, mode) => {
     rowElement.style.setProperty(
       "background",
       "rgba(50, 0, 0, 0.8)",
-      "important"
+      "important",
     );
+  } else {
+    rowElement.style.border = "";
+    rowElement.style.removeProperty("background");
   }
 };
 
@@ -99,14 +112,14 @@ const handleStorePage = () => {
   if (document.getElementById("slop-warning-banner")) return;
 
   const disclosureDivs = document.querySelectorAll(
-    "#game_area_content_descriptors"
+    "#game_area_content_descriptors",
   );
 
   for (const disclosureDiv of disclosureDivs) {
     const headers = Array.from(disclosureDiv.querySelectorAll("h2"));
 
     const aiHeader = headers.find((h) =>
-      h.textContent.includes("AI Generated Content Disclosure")
+      h.textContent.includes("AI Generated Content Disclosure"),
     );
 
     if (aiHeader) {
@@ -127,14 +140,14 @@ const handleStorePage = () => {
       }
 
       const targetContainer = document.getElementById(
-        "responsive_apppage_details_left_ctn"
+        "responsive_apppage_details_left_ctn",
       );
       if (targetContainer) {
         const banner = document.createElement("div");
         banner.id = "slop-warning-banner";
 
         banner.innerHTML = `<img src="${chrome.runtime.getURL(
-          "icons/iconsvg.svg"
+          "icons/iconsvg.svg",
         )}" style="width: 32px; height: 32px; float: right; margin-left: 10px; margin-bottom: 5px;"><div style="font-size: 16px; color: #a30100; margin-bottom: 5px;">AI Disclosure</div><div style="font-size: 13px;">${details}</div>`;
         Object.assign(banner.style, {
           background:
@@ -147,7 +160,36 @@ const handleStorePage = () => {
         targetContainer.prepend(banner);
         return;
       }
-    }
+    }/* else {
+      //shows a banner saying no AI content detected
+      //don't want to clutter the page too much
+      //users can assume no disclosure means no AI content
+
+      let details = "No AI content usage";
+
+      const targetContainer = document.getElementById(
+        "responsive_apppage_details_left_ctn",
+      );
+      if (targetContainer) {
+        const banner = document.createElement("div");
+        banner.id = "slop-warning-banner";
+
+        banner.innerHTML = `<img src="${chrome.runtime.getURL(
+          "icons/iconsvg.svg",
+        )}" style="width: 32px; height: 32px; float: right; margin-left: 10px; margin-bottom: 5px;"><div style="font-size: 16px; color: #00a357; margin-bottom: 5px;">AI Disclosure</div><div style="font-size: 13px;">${details}</div>`;
+        Object.assign(banner.style, {
+          background:
+            "linear-gradient( 90deg, rgba(0,0,0,0.5) 5%,rgba(0,0,0,0.65) 95%)",
+          border: "1px solid #00a357",
+          padding: "16px",
+          marginBottom: "8px",
+          color: "#c6d4df",
+        });
+        targetContainer.prepend(banner);
+        return;
+      }
+        
+    }*/
   }
 };
 
@@ -161,13 +203,13 @@ const initSearchPageObserver = () => {
         }
       });
     },
-    { rootMargin: "200px" }
+    { rootMargin: "200px" },
   );
 
   const listObserver = new MutationObserver(() => {
     document
       .querySelectorAll(
-        ".search_result_row:not([data-slop-checked]), .tab_item:not([data-slop-checked])"
+        ".search_result_row:not([data-slop-checked]), .tab_item:not([data-slop-checked])",
       )
       .forEach((row) => {
         observer.observe(row);
@@ -185,7 +227,7 @@ const initSearchPageObserver = () => {
     .forEach((row) => observer.observe(row));
 };
 
-const addSlopModePanel = () => {
+const addfilterModePanel = () => {
   const optionsContainer = document.getElementById("additional_search_options");
   if (!optionsContainer || document.getElementById("slop-mode-filter")) return;
 
@@ -206,7 +248,7 @@ const addSlopModePanel = () => {
   const header = document.createElement("div");
   header.setAttribute(
     "data-panel",
-    '{"focusable":true,"clickOnActivate":true}'
+    '{"focusable":true,"clickOnActivate":true}',
   );
   header.setAttribute("role", "button");
   header.className = "block_header labs_block_header";
@@ -247,7 +289,7 @@ const addSlopModePanel = () => {
     const control = document.createElement("span");
     control.setAttribute(
       "data-panel",
-      '{"focusable":true,"clickOnActivate":true}'
+      '{"focusable":true,"clickOnActivate":true}',
     );
     control.setAttribute("role", "button");
     control.className =
@@ -275,8 +317,26 @@ const addSlopModePanel = () => {
     content.appendChild(row);
 
     control.addEventListener("click", () => {
-      chrome.storage.sync.set({ slopMode: mode.value }, () => {
-        window.location.reload();
+      chrome.storage.sync.set({ filterMode: mode.value }, () => {
+        currentMode = mode.value;
+
+        const panel = document.getElementById("slop-mode-filter");
+        if (panel) {
+          panel
+            .querySelectorAll(".tab_filter_control_row, .tab_filter_control")
+            .forEach((el) => {
+              el.classList.toggle("checked", el.dataset.value === currentMode);
+            });
+        }
+
+        document
+          .querySelectorAll('[data-slop-checked="true"]')
+          .forEach((row) => {
+            const appId = row.dataset.dsAppid;
+            if (appId && memoryCache.get(appId)) {
+              applySlopStyle(row, currentMode);
+            }
+          });
       });
     });
   });
@@ -295,20 +355,20 @@ const addSlopModePanel = () => {
 const observeAdditionalOptions = () => {
   const optionsContainer = document.getElementById("additional_search_options");
   if (optionsContainer) {
-    addSlopModePanel();
+    addfilterModePanel();
     const observer = new MutationObserver(() => {
       if (!document.getElementById("slop-mode-filter")) {
-        addSlopModePanel();
+        addfilterModePanel();
       }
     });
     observer.observe(optionsContainer, { childList: true, subtree: true });
   }
 };
 
-chrome.storage.sync.get(["slopMode"], (res) => {
-  if (res.slopMode) currentMode = res.slopMode;
-  console.log("Slop mode set to:", currentMode);
-  console.log("Current URL:", window.location.href);
+chrome.storage.sync.get(["filterMode"], (res) => {
+  if (res.filterMode) currentMode = res.filterMode;
+  console.log('%c[AI Disclosure]%c', 'color:#a30100; font-weight:bold;', '',"Slop mode set to:", currentMode);
+  console.log('%c[AI Disclosure]%c', 'color:#a30100; font-weight:bold;', '',"Current URL:", window.location.href);
   if (window.location.href.includes("/app/")) {
     handleStorePage();
     const observer = new MutationObserver(() => handleStorePage());
