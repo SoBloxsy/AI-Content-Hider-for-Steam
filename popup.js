@@ -1,11 +1,11 @@
-chrome.storage.sync.get(['slopMode'], (result) => {
-  const mode = result.slopMode || 'text';
+chrome.storage.sync.get(['filterMode'], (result) => {
+  const mode = result.filterMode || 'text';
   document.querySelector(`input[value="${mode}"]`).checked = true;
 });
 
 document.querySelectorAll('input[name="mode"]').forEach((input) => {
   input.addEventListener('change', (e) => {
-    chrome.storage.sync.set({ slopMode: e.target.value }, () => {
+    chrome.storage.sync.set({ filterMode: e.target.value }, () => {
       
       chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
         chrome.tabs.reload(tabs[0].id);
