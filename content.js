@@ -48,6 +48,7 @@ const applySlopStyle = (rowElement, mode) => {
   const title =
     rowElement.querySelector(".title") ||
     rowElement.querySelector(".tab_item_name") ||
+    rowElement.querySelector(".tab_item_title") ||
     rowElement.querySelector(".match_name") ||
     rowElement.querySelector(".name");
 
@@ -209,7 +210,7 @@ const initSearchPageObserver = () => {
   const listObserver = new MutationObserver(() => {
     document
       .querySelectorAll(
-        ".search_result_row:not([data-slop-checked]), .tab_item:not([data-slop-checked])",
+        ".search_result_row:not([data-slop-checked]), .tab_item:not([data-slop-checked]), .tab_row_item:not([data-slop-checked])",
       )
       .forEach((row) => {
         observer.observe(row);
@@ -223,7 +224,7 @@ const initSearchPageObserver = () => {
   }
 
   document
-    .querySelectorAll(".search_result_row, .tab_item")
+    .querySelectorAll(".search_result_row, .tab_item, .tab_row_item")
     .forEach((row) => observer.observe(row));
 };
 
