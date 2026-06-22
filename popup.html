@@ -20,6 +20,9 @@
         border-bottom: 1px solid #3c4d5d;
         padding-bottom: 8px;
       }
+      h3.section-header {
+        margin-top: 16px;
+      }
       /* Card style for options */
       .option-card {
         display: flex;
@@ -121,6 +124,38 @@
         border-color: #66c0f4;
         color: #fff;
       }
+
+      /* Statistics */
+      .stat-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 6px 10px;
+        background: #222b35;
+        border-radius: 4px;
+        margin-bottom: 4px;
+        font-size: 12px;
+      }
+      .stat-label {
+        color: #8f98a0;
+      }
+      .stat-value {
+        color: #66c0f4;
+        font-weight: bold;
+      }
+      .reset-link {
+        display: block;
+        font-size: 10px;
+        color: #586977;
+        text-align: right;
+        margin-top: 4px;
+        cursor: pointer;
+        text-decoration: none;
+        transition: color 0.2s;
+      }
+      .reset-link:hover {
+        color: #8f98a0;
+      }
+
     </style>
   </head>
   <body>
@@ -152,11 +187,23 @@
 
     <button id="clear-cache">Clear Cache</button>
 
+    <h3 class="section-header">Statistics</h3>
+    <div class="stat-row">
+      <span class="stat-label">Games checked</span>
+      <span class="stat-value" id="stat-checked">--</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">AI-flagged games</span>
+      <span class="stat-value" id="stat-flagged">--</span>
+    </div>
+    <a href="#" id="reset-stats" class="reset-link">Reset stats</a>
+
+
     <div class="version">
       <a
         href="https://chromewebstore.google.com/detail/fgkeoeoibigdcdkfdckkpodhfhppgdlo?utm_source=item-share-cb"
         target="_blank"
-        >AI Generated Content Filter for Steam v3.3.2</a
+        >AI Generated Content Filter for Steam v3.3.3</a
       >
     </div>
 

@@ -1,10 +1,11 @@
-// #a30100 is the red used in the logo
-// #00a357 is a green color that could be used for "no AI content detected" messages
-// hi person reading this :)
+// #a30100 red used in the logo
+// #00a357 
 
 console.log( '%c[AI Disclosure]%c', 'color:#a30100; font-weight:bold;', '', "Content script loaded." );
 
-let currentMode = "highlight";
+let currentMode = "text";
+const CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
+let flaggedCount = 0;
 
 chrome.storage.onChanged.addListener((changes) => {
   if (changes.filterMode) {
@@ -15,18 +16,39 @@ chrome.storage.onChanged.addListener((changes) => {
 const memoryCache = new Map();
 
 const checkUrlForSlop = async (appId) => {
-  if (memoryCache.has(appId)) return memoryCache.get(appId);
+  if (memoryCache.has(appId)) {
+    const entry = memoryCache.get(appId);
+    if (entry.ts && (Date.now() - entry.ts > CACHE_TTL)) {
+      memoryCache.delete(appId);
+    } else {
+      return entry.value;
+    }
+  }
 
-  const storageKey = `slop_cache_${appId}`; 
+  const storageKey = `slop_cache_${appId}`;
   const cached = await new Promise((resolve) =>
-    chrome.storage.local.get([storageKey], (res) =>
-      resolve((res || {})[storageKey]),
-    ),
+    chrome.storage.local.get([storageKey], (res) => {
+      if (chrome.runtime.lastError) {
+        console.log('%c[AI Disclosure]%c', 'color:#a30100; font-weight:bold;', '', 'Storage error:', chrome.runtime.lastError.message);
+        resolve(undefined);
+        return;
+      }
+      resolve((res || {})[storageKey]);
+    }),
   );
+
   if (cached !== undefined) {
-    memoryCache.set(appId, cached);
-    console.log('%c[AI Disclosure]%c', 'color:#a30100; font-weight:bold;','',`AppID ${appId} UseAI:`, cached);
-    return cached;
+   
+    const entry = typeof cached === 'object' && cached !== null
+      ? cached
+      : { value: cached, ts: 0 };
+
+    if (entry.ts && (Date.now() - entry.ts <= CACHE_TTL)) {
+      memoryCache.set(appId, entry);
+      console.log('%c[AI Disclosure]%c', 'color:#a30100; font-weight:bold;','',`AppID ${appId} UseAI:`, entry.value);
+      return entry.value;
+    }
+
   }
 
   try {
@@ -35,9 +57,18 @@ const checkUrlForSlop = async (appId) => {
     );
     const text = await response.text();
     const isSlop = text.includes("AI Generated Content Disclosure");
-    memoryCache.set(appId, isSlop);
+    const entry = { value: isSlop, ts: Date.now() };
+    memoryCache.set(appId, entry);
     console.log('%c[AI Disclosure]%c', 'color:#a30100; font-weight:bold;','',`AppID ${appId} UseAI:`, isSlop);
-    chrome.storage.local.set({ [storageKey]: isSlop });
+    chrome.storage.local.set({ [storageKey]: entry });
+
+    // Track stats
+    chrome.runtime.sendMessage({
+      type: 'incrementStats',
+      checked: 1,
+      flagged: isSlop ? 1 : 0,
+    });
+
     return isSlop;
   } catch (e) {
     return false;
@@ -60,25 +91,45 @@ const applySlopStyle = (rowElement, mode) => {
   }
 
   // Common badge logic
-  let badge = title ? title.querySelector(".slop-badge") : null;
-  if (title && !badge) {
-    title.style.overflow = "visible";
-    title.style.whiteSpace = "normal";
-
+  let badge = rowElement.querySelector(".slop-badge");
+  if (!badge) {
     badge = document.createElement("span");
     badge.className = "slop-badge";
     badge.innerText = " [AI CONTENT USED]";
     badge.style.fontWeight = "bold";
     badge.style.fontSize = "12px";
-    badge.style.marginLeft = "10px";
-    title.appendChild(badge);
+
+    if (title) {
+      title.style.overflow = "visible";
+      title.style.whiteSpace = "normal";
+      badge.style.marginLeft = "10px";
+      title.appendChild(badge);
+    } else {
+      badge.style.display = "block";
+      badge.style.textAlign = "center";
+      badge.style.width = "100%";
+      badge.style.backgroundColor = "rgba(0,0,0,0.8)";
+      badge.style.position = "absolute";
+      badge.style.bottom = "0";
+      badge.style.left = "0";
+      badge.style.zIndex = "10";
+      
+      const imgCtn = rowElement.querySelector(".capsule_image_ctn");
+      if (imgCtn) {
+        imgCtn.style.position = "relative";
+        imgCtn.appendChild(badge);
+      } else {
+        rowElement.style.position = "relative";
+        rowElement.appendChild(badge);
+      }
+    }
   }
 
   if (badge) {
     if (mode === "highlight") {
       badge.style.color = "#a30100";
     } else {
-      badge.style.color = "#888"; // subtler for text mode
+      badge.style.color = "#888"; 
     }
   }
 
@@ -105,6 +156,8 @@ const markSearchResult = (rowElement) => {
   checkUrlForSlop(appId).then((isSlop) => {
     if (isSlop) {
       applySlopStyle(rowElement, currentMode);
+      flaggedCount++;
+      chrome.runtime.sendMessage({ type: 'updateBadge', count: flaggedCount });
     }
   });
 };
@@ -158,13 +211,21 @@ const handleStorePage = () => {
           marginBottom: "8px",
           color: "#c6d4df",
         });
+
         targetContainer.prepend(banner);
+
+      
+        chrome.runtime.sendMessage({ type: 'updateBadge', count: 1 });
+        chrome.runtime.sendMessage({
+          type: 'incrementStats',
+          checked: 1,
+          flagged: 1,
+        });
+
         return;
       }
     }/* else {
       //shows a banner saying no AI content detected
-      //don't want to clutter the page too much
-      //users can assume no disclosure means no AI content
 
       let details = "No AI content usage";
 
@@ -210,7 +271,7 @@ const initSearchPageObserver = () => {
   const listObserver = new MutationObserver(() => {
     document
       .querySelectorAll(
-        ".search_result_row:not([data-slop-checked]), .tab_item:not([data-slop-checked]), .tab_row_item:not([data-slop-checked])",
+        ".search_result_row:not([data-slop-checked]), .tab_item:not([data-slop-checked]), .tab_row_item:not([data-slop-checked]), .sale_capsule:not([data-slop-checked]), [data-ds-appid]:not([data-slop-checked])",
       )
       .forEach((row) => {
         observer.observe(row);
@@ -224,7 +285,7 @@ const initSearchPageObserver = () => {
   }
 
   document
-    .querySelectorAll(".search_result_row, .tab_item, .tab_row_item")
+    .querySelectorAll(".search_result_row, .tab_item, .tab_row_item, .sale_capsule, [data-ds-appid]")
     .forEach((row) => observer.observe(row));
 };
 
@@ -263,7 +324,6 @@ const addfilterModePanel = () => {
   // logo.style.top = "50%";
   // logo.style.transform = "translateY(-50%)";
   // header.appendChild(logo);
-  // might add logo later
   const headerText = document.createElement("div");
   headerText.textContent = "Narrow by AI Usage";
   header.appendChild(headerText);
@@ -319,6 +379,10 @@ const addfilterModePanel = () => {
 
     control.addEventListener("click", () => {
       chrome.storage.sync.set({ filterMode: mode.value }, () => {
+        if (chrome.runtime.lastError) {
+          console.log('%c[AI Disclosure]%c', 'color:#a30100; font-weight:bold;', '', 'Error saving mode:', chrome.runtime.lastError.message);
+          return;
+        }
         currentMode = mode.value;
 
         const panel = document.getElementById("slop-mode-filter");
@@ -334,7 +398,7 @@ const addfilterModePanel = () => {
           .querySelectorAll('[data-slop-checked="true"]')
           .forEach((row) => {
             const appId = row.dataset.dsAppid;
-            if (appId && memoryCache.get(appId)) {
+            if (appId && memoryCache.get(appId)?.value) {
               applySlopStyle(row, currentMode);
             }
           });
@@ -366,7 +430,10 @@ const observeAdditionalOptions = () => {
   }
 };
 
-chrome.storage.sync.get(["filterMode"], (res) => {
+chrome.storage.sync.get(['filterMode'], (res) => {
+  if (chrome.runtime.lastError) {
+    console.log('%c[AI Disclosure]%c', 'color:#a30100; font-weight:bold;', '', 'Error loading settings:', chrome.runtime.lastError.message);
+  }
   if (res.filterMode) currentMode = res.filterMode;
   console.log('%c[AI Disclosure]%c', 'color:#a30100; font-weight:bold;', '',"Slop mode set to:", currentMode);
   console.log('%c[AI Disclosure]%c', 'color:#a30100; font-weight:bold;', '',"Current URL:", window.location.href);
