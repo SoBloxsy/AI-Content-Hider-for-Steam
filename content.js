@@ -10,6 +10,18 @@ let flaggedCount = 0;
 chrome.storage.onChanged.addListener((changes) => {
   if (changes.filterMode) {
     currentMode = changes.filterMode.newValue;
+
+    // Re-apply styles for already-checked items when mode changes
+    if (window.location.href.includes("/wishlist/")) {
+      document
+        .querySelectorAll('[data-slop-checked="true"]')
+        .forEach((row) => {
+          const appId = row.dataset.dsAppid;
+          if (appId && memoryCache.get(appId)?.value) {
+            applySlopStyleWishlist(row, currentMode);
+          }
+        });
+    }
   }
 });
 
@@ -134,6 +146,84 @@ const applySlopStyle = (rowElement, mode) => {
   }
 
   if (mode === "highlight") {
+    rowElement.style.border = "2px solid #a30100";
+    rowElement.style.setProperty(
+      "background",
+      "rgba(50, 0, 0, 0.8)",
+      "important",
+    );
+  } else {
+    rowElement.style.border = "";
+    rowElement.style.removeProperty("background");
+  }
+};
+
+// Wishlist items use obfuscated class names, so we find the title anchor
+// by looking for links whose href contains /app/. The first such link with
+// text content is treated as the title element.
+const applySlopStyleWishlist = (rowElement, mode) => {
+  rowElement.style.display = "";
+
+  // "hide" mode falls through to highlight on the wishlist page
+  // because display:none breaks the wishlist layout
+  const effectiveMode = mode === "hide" ? "highlight" : mode;
+
+  let badge = rowElement.querySelector(".slop-badge");
+  if (!badge) {
+    badge = document.createElement("a");
+    badge.className = "slop-badge";
+    badge.textContent = "AI Content Used";
+    badge.setAttribute("role", "button");
+    badge.setAttribute("tabindex", "0");
+    // Style as a pill badge matching the "Demo Available" tag
+    Object.assign(badge.style, {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: "2px 6px",
+      borderRadius: "2px",
+      fontSize: "11px",
+      fontWeight: "bold",
+      lineHeight: "normal",
+      textDecoration: "none",
+      cursor: "default",
+      whiteSpace: "nowrap",
+      alignSelf: "stretch",
+    });
+
+    // Place above the "Add to Cart" button
+    const buttons = rowElement.querySelectorAll('button');
+    let cartButton = null;
+    for (const btn of buttons) {
+      if (btn.textContent.trim() === "Add to Cart") {
+        cartButton = btn;
+        break;
+      }
+    }
+
+    if (cartButton) {
+      // Insert before the button's parent div (the cart button container)
+      const cartContainer = cartButton.parentElement;
+      cartContainer.parentElement.insertBefore(badge, cartContainer);
+    } else {
+      // Fallback: append to the row
+      rowElement.appendChild(badge);
+    }
+  }
+
+  if (badge) {
+    if (effectiveMode === "highlight") {
+      badge.style.backgroundColor = "#a30100";
+      badge.style.color = "#fff";
+      badge.style.border = "1px solid #a30100";
+    } else {
+      badge.style.backgroundColor = "rgba(255,255,255,0.1)";
+      badge.style.color = "#c7d5e0";
+      badge.style.border = "1px solid rgba(255,255,255,0.2)";
+    }
+  }
+
+  if (effectiveMode === "highlight") {
     rowElement.style.border = "2px solid #a30100";
     rowElement.style.setProperty(
       "background",
@@ -430,6 +520,82 @@ const observeAdditionalOptions = () => {
   }
 };
 
+// --- Wishlist page support ---
+
+// Extract the app ID from an href like /app/612470/Bio_Inc_Redemption
+const extractAppIdFromHref = (href) => {
+  const match = href && href.match(/\/app\/(\d+)/);
+  return match ? match[1] : null;
+};
+
+// Find all wishlist item containers on the page.
+// Wishlist items are div[role="button"][tabindex="0"] containers that
+// contain at least one anchor linking to /app/. This avoids relying on
+// obfuscated class names.
+const getWishlistItems = () => {
+  const candidates = document.querySelectorAll('div[role="button"][tabindex="0"]');
+  const items = [];
+  candidates.forEach((el) => {
+    const link = el.querySelector('a[href*="/app/"]');
+    if (link && extractAppIdFromHref(link.href)) {
+      items.push(el);
+    }
+  });
+  return items;
+};
+
+const markWishlistItem = (rowElement) => {
+  if (rowElement.dataset.slopChecked) return;
+  rowElement.dataset.slopChecked = "true";
+
+  const link = rowElement.querySelector('a[href*="/app/"]');
+  const appId = link ? extractAppIdFromHref(link.href) : null;
+  if (!appId) return;
+
+  // Store appId on the element so we can re-apply styles on mode change
+  rowElement.dataset.dsAppid = appId;
+
+  checkUrlForSlop(appId).then((isSlop) => {
+    if (isSlop) {
+      applySlopStyleWishlist(rowElement, currentMode);
+      flaggedCount++;
+      chrome.runtime.sendMessage({ type: 'updateBadge', count: flaggedCount });
+    }
+  });
+};
+
+const initWishlistObserver = () => {
+  console.log('%c[AI Disclosure]%c', 'color:#a30100; font-weight:bold;', '', 'Wishlist page detected, initializing observer.');
+
+  const observer = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          markWishlistItem(entry.target);
+          observer.unobserve(entry.target);
+        }
+      });
+    },
+    { rootMargin: "200px" },
+  );
+
+  // Observe existing items
+  getWishlistItems().forEach((item) => observer.observe(item));
+
+  // Watch for dynamically added items (wishlist lazy-loads on scroll)
+  const listObserver = new MutationObserver(() => {
+    getWishlistItems().forEach((item) => {
+      if (!item.dataset.slopChecked) {
+        observer.observe(item);
+      }
+    });
+  });
+
+  listObserver.observe(document.body, { childList: true, subtree: true });
+};
+
+// --- Main initialization ---
+
 chrome.storage.sync.get(['filterMode'], (res) => {
   if (chrome.runtime.lastError) {
     console.log('%c[AI Disclosure]%c', 'color:#a30100; font-weight:bold;', '', 'Error loading settings:', chrome.runtime.lastError.message);
@@ -443,8 +609,11 @@ chrome.storage.sync.get(['filterMode'], (res) => {
     if (document.body) {
       observer.observe(document.body, { childList: true, subtree: true });
     }
+  } else if (window.location.href.includes("/wishlist/")) {
+    initWishlistObserver();
   } else {
     initSearchPageObserver();
     observeAdditionalOptions();
   }
 });
+

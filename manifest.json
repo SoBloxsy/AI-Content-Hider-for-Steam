@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AI Generated Content Filter for Steam",
-  "version": "3.3.3",
+  "version": "3.4.0",
   "description": "Take back control of your Steam browsing experience.",
   "permissions": ["storage"],
   "icons": {
@@ -11,6 +11,17 @@
   },
   "background": {
     "service_worker": "background.js"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "extensions@iren.blue",
+      "strict_min_version": "128.0",
+      "data_collection_permissions": {
+        "required": [
+          "none"
+        ]
+      }
+    }
   },
   "action": {
     "default_popup": "popup.html",

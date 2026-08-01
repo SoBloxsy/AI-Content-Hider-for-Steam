@@ -61,3 +61,19 @@ document.getElementById('reset-stats')?.addEventListener('click', (e) => {
     loadStats();
   });
 });
+
+// -- Promo banner --
+
+chrome.storage.local.get(['promoDismissed'], (result) => {
+  if (chrome.runtime.lastError) return;
+  if (!result.promoDismissed) {
+    const banner = document.getElementById('promo-banner');
+    if (banner) banner.style.display = 'block';
+  }
+});
+
+document.getElementById('promo-dismiss')?.addEventListener('click', () => {
+  chrome.storage.local.set({ promoDismissed: true });
+  const banner = document.getElementById('promo-banner');
+  if (banner) banner.style.display = 'none';
+});
