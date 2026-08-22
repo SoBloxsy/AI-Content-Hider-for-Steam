@@ -77,3 +77,17 @@ document.getElementById('promo-dismiss')?.addEventListener('click', () => {
   const banner = document.getElementById('promo-banner');
   if (banner) banner.style.display = 'none';
 });
+
+// -- Version link --
+
+const versionLink = document.getElementById('version-link') || document.querySelector('.version a');
+if (versionLink) {
+  const isFirefox = /Firefox/i.test(navigator.userAgent) || (typeof browser !== 'undefined' && typeof browser.runtime?.getBrowserInfo === 'function');
+  if (isFirefox) {
+    versionLink.href = 'https://addons.mozilla.org/en-US/firefox/addon/ai-content-filter-for-steam/';
+  }
+  const manifest = chrome.runtime?.getManifest?.();
+  if (manifest?.version) {
+    versionLink.textContent = `AI Generated Content Filter for Steam v${manifest.version}`;
+  }
+}
