@@ -1,9 +1,11 @@
 {
   "manifest_version": 3,
   "name": "AI Generated Content Filter for Steam",
-  "version": "3.4.1",
+  "version": "3.5.0",
   "description": "Take back control of your Steam browsing experience.",
-  "permissions": ["storage"],
+  "permissions": [
+    "storage"
+  ],
   "icons": {
     "16": "icon16.png",
     "48": "icon48.png",
@@ -33,15 +35,23 @@
   },
   "content_scripts": [
     {
-      "matches": ["*://store.steampowered.com/*"],
-      "js": ["content.js"],
+      "matches": [
+        "*://store.steampowered.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_end"
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["icons/*.svg"],
-      "matches": ["*://store.steampowered.com/*"]
+      "resources": [
+        "icons/*.svg"
+      ],
+      "matches": [
+        "*://store.steampowered.com/*"
+      ]
     }
   ]
 }

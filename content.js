@@ -1,281 +1,870 @@
-// #a30100 red used in the logo
-// #00a357 
+// Accessible high-visibility theme colors
+// Warning Red: #d32f2f (outline/border) & rgba(163, 1, 0, 0.28) (capsule tint overlay)
+// Accent Blue: #1976d2 (informational / tolerated items)
 
-console.log( '%c[AI Disclosure]%c', 'color:#a30100; font-weight:bold;', '', "Content script loaded." );
+console.log('%c[AI Disclosure]%c', 'color:#d32f2f; font-weight:bold;', '', 'Content script loaded.');
 
-let currentMode = "text";
+let currentMode = 'text';
+let filterSettings = {
+  ignoreLocalization: false,
+  ignoreCode: false,
+  ignoreConceptArt: false,
+  ignoreMarketing: false,
+};
+
 const CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
 let flaggedCount = 0;
 
+// Memory cache stores: { value: boolean, categories: string[], details: string, ts: number }
+const memoryCache = new Map();
+const inFlightFetches = new Map();
+
+// Current page AppID if on a store page (e.g. /app/4262460/)
+const getCurrentPageAppId = () => {
+  const match = window.location.pathname.match(/\/app\/(\d+)/);
+  return match ? match[1] : null;
+};
+const currentPageAppId = getCurrentPageAppId();
+
+// --- Request Queue & Concurrency Limiter ---
+const MAX_CONCURRENT_FETCHES = 5;
+let activeFetches = 0;
+const fetchQueue = [];
+
+const processQueue = () => {
+  while (activeFetches < MAX_CONCURRENT_FETCHES && fetchQueue.length > 0) {
+    const { task, resolve, reject } = fetchQueue.shift();
+    activeFetches++;
+    task()
+      .then(resolve)
+      .catch(reject)
+      .finally(() => {
+        activeFetches--;
+        processQueue();
+      });
+  }
+};
+
+const enqueueFetch = (task) => {
+  return new Promise((resolve, reject) => {
+    fetchQueue.push({ task, resolve, reject });
+    processQueue();
+  });
+};
+
+// --- Settings Listener ---
 chrome.storage.onChanged.addListener((changes) => {
+  let shouldReapply = false;
   if (changes.filterMode) {
     currentMode = changes.filterMode.newValue;
-
-    // Re-apply styles for already-checked items when mode changes
-    if (window.location.href.includes("/wishlist/")) {
-      document
-        .querySelectorAll('[data-slop-checked="true"]')
-        .forEach((row) => {
-          const appId = row.dataset.dsAppid;
-          if (appId && memoryCache.get(appId)?.value) {
-            applySlopStyleWishlist(row, currentMode);
-          }
-        });
+    shouldReapply = true;
+  }
+  ['ignoreLocalization', 'ignoreCode', 'ignoreConceptArt', 'ignoreMarketing'].forEach((key) => {
+    if (changes[key] !== undefined) {
+      filterSettings[key] = Boolean(changes[key].newValue);
+      shouldReapply = true;
     }
+  });
+
+  if (shouldReapply) {
+    reapplyStylesAcrossPage();
   }
 });
 
-const memoryCache = new Map();
+// --- Category Patterns & Classification Engine ---
+const CATEGORY_PATTERNS = {
+  localization: /\b(translat|localis|localiz|subtitl|multilingual|language|deepl|grammat(ic)?|grammar)\w*\b/i,
+  art_in_game: /\b(art|artwork|texture|sprite|illustration|portrait|background|3d\s*model|cg|image|wallpaper|visual|animation|icon|painting|cinematic|video|upscal|card\s*design|render|asset|draw(n|ing)?)\w*\b/i,
+  concept_art: /\b(concept\s*art|early\s*concept|ideat\w*|brainstorm\w*|pre-production|in-dev|early\s*dev\w*|prototyp\w*|inspiration|moodboard|reference\s*(only|image|material)?|placeholder|not\s*(used\s*in|in)\s*(the\s*)?(final\s*)?game|replaced\s*(in|with|for)\s*(the\s*)?(final\s*)?game)\b/i,
+  audio_music: /\b(voice|audio|music|sound|sfx|voiceover|\bvo\b|dubbing|speech|tts|vocal|song|instrumental|spoken)\w*\b/i,
+  live_generation: /\b(during\s+(game)?play|real-time|in\s+real\s+time|on\s+the\s+fly|live-generate|dynamic(ally)?\s+generate|chatbot|llm|interrogat|conversation|respond|response|tailored\s+to\s+player|player\s+input|talk\s+(to|with))\w*\b/i,
+  code: /\b(code|coding|programming|copilot|scripting|mechanic)\w*\b/i,
+  text_narrative: /\b(story|dialog(ue)?|script|writing|scenario|monologue|narrative|lore|quest|text-generate|generated\s+text)\w*\b/i,
+  marketing: /\b(store\s*page|trailer|capsule|promotional|banner|marketing)\w*\b/i,
+};
 
+const classifyAiDisclosure = (text) => {
+  if (!text) {
+    return {
+      value: false,
+      categories: [],
+      details: '',
+    };
+  }
+
+  const detected = [];
+  const lowerText = text.toLowerCase();
+
+  for (const [cat, regex] of Object.entries(CATEGORY_PATTERNS)) {
+    const globalRegex = new RegExp(regex.source, 'gi');
+    let match;
+    let matched = false;
+
+    while ((match = globalRegex.exec(text)) !== null) {
+      const idx = match.index;
+      const matchedWord = match[0].toLowerCase();
+
+      // Disambiguation: 'model' in AI context means Machine Learning Model (LLM/SLM), NOT 3D art
+      if (cat === 'art_in_game' && (matchedWord === 'model' || matchedWord === 'models')) {
+        const precedingShort = text.substring(Math.max(0, idx - 30), idx).toLowerCase();
+        if (/\b(ai|language|local|small|large|llm|slm|diffusion|audio|speech|voice|text-to-speech|tts)\s+$/i.test(precedingShort)) {
+          continue; // Skip AI/ML model
+        }
+      }
+
+      // Look back up to 120 characters in the same sentence/clause
+      const preceding = text.substring(Math.max(0, idx - 120), idx).toLowerCase();
+      const lastPunct = Math.max(preceding.lastIndexOf('.'), preceding.lastIndexOf(';'), preceding.lastIndexOf('\n'));
+      const clause = lastPunct !== -1 ? preceding.substring(lastPunct + 1) : preceding;
+
+      const isNegatedPreceding =
+        /\b(no|never|not|without|neither|zero)\s+([a-z0-9_,-]+\s+){0,10}$/i.test(clause) ||
+        /\bno\s+ai\s+(was|is)?\s*(used|utilized)?\s*(in|for)?\s*(the\s+creation\s+of\s+)?(any\s+)?([a-z0-9_,-]+\s+)*$/i.test(clause);
+
+      // Check following words in same sentence for 'are not ai' or 'are human made' or 'hand-drawn'
+      const following = text.substring(idx + match[0].length, Math.min(text.length, idx + match[0].length + 100));
+      const firstPunct = following.search(/[.!?\n]/);
+      const followingClause = firstPunct !== -1 ? following.substring(0, firstPunct) : following;
+      const isNegatedFollowing =
+        /\b(are\s+not\s+ai|are\s+human\s+made|were\s+hand-drawn|no\s+ai-generated|not\s+in\s+the\s+final|replaced\s+with\s+original)\b/i.test(followingClause);
+
+      if (!isNegatedPreceding && !isNegatedFollowing) {
+        matched = true;
+        break;
+      }
+    }
+
+    if (matched) {
+      detected.push(cat);
+    }
+  }
+
+  // --- Concept Art / Prototyping / Art-in-Dev vs Art-In-Game Reconciliation ---
+  const hasDevOnlyDisclaimer =
+    /\b(prototyp\w*|early\s*prototyp\w*|concept\s*art|ideat\w*|inspiration|reference|pre-production|in-dev|placeholder)\b/i.test(lowerText) &&
+    (/\b(replaced\s+with\s+original|all\s+final\s+in-game.*hand-drawn|no\s+ai.*(in\s+the\s+final|included\s+in\s+the\s+final|present\s+in\s+the\s+game)|everything\s+is\s+human\s+made|not\s+used\s+in\s+the\s+final|only\s+during\s+(early\s+)?prototyp\w*|hand-drawn\s+by\s+the\s+developer)\b/i.test(lowerText));
+
+  if (hasDevOnlyDisclaimer) {
+    const artIdx = detected.indexOf('art_in_game');
+    if (artIdx !== -1) detected.splice(artIdx, 1);
+    if (!detected.includes('concept_art')) detected.push('concept_art');
+  } else if (detected.includes('concept_art') && detected.includes('art_in_game')) {
+    const cleaned = text.replace(/concept\s*art|visual\s*ideation|early\s*concept|design\s*reference/gi, '');
+    if (!CATEGORY_PATTERNS.art_in_game.test(cleaned)) {
+      const idx = detected.indexOf('art_in_game');
+      detected.splice(idx, 1);
+    }
+  }
+
+  // Live generation check: ensure 'does not generate ... in real time' is not flagged
+  if (detected.includes('live_generation')) {
+    if (/\b(does\s*not|no|not|neither)\s+([a-z0-9_-]+\s+){0,6}(generate\s+.*in\s+real\s*time|live|during\s+gameplay)\b/i.test(lowerText)) {
+      const idx = detected.indexOf('live_generation');
+      detected.splice(idx, 1);
+    }
+  }
+
+  return {
+    value: true,
+    categories: detected.length > 0 ? detected : ['unspecified'],
+    details: text.trim(),
+  };
+};
+
+const shouldFlagGame = (categories, settings) => {
+  if (!categories || categories.length === 0) return false;
+  if (categories.includes('unspecified')) return true;
+
+  const activeCategories = categories.filter((cat) => {
+    if (cat === 'localization' && settings.ignoreLocalization) return false;
+    if (cat === 'code' && settings.ignoreCode) return false;
+    if (cat === 'concept_art' && settings.ignoreConceptArt) return false;
+    if (cat === 'marketing' && settings.ignoreMarketing) return false;
+    return true;
+  });
+
+  return activeCategories.length > 0;
+};
+
+const isToleratedCategoryOnly = (categories) => {
+  if (!categories || categories.length === 0) return false;
+  return categories.every((cat) => ['localization', 'code', 'marketing', 'concept_art'].includes(cat));
+};
+
+const formatCategoryTag = (categories) => {
+  if (!categories || categories.length === 0) return 'AI Content';
+  if (categories.includes('unspecified')) return 'AI Content';
+
+  const labels = {
+    localization: 'Translation',
+    art_in_game: 'Art',
+    concept_art: 'Concept Art',
+    audio_music: 'Audio',
+    live_generation: 'Live Runtime',
+    code: 'Code',
+    text_narrative: 'Story',
+    marketing: 'Marketing',
+  };
+
+  const shortNames = categories.map((c) => labels[c] || c.toUpperCase());
+  return `AI: ${shortNames.join('/')}`;
+};
+
+// --- Stream HTML until descriptor boundary is found or completed ---
+const extractDisclosureFromStream = async (response) => {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let html = '';
+  let descriptorText = null;
+  let hasDisclosureHeading = false;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      html += decoder.decode(value, { stream: true });
+
+      const descriptorStartIdx = html.indexOf('id="game_area_content_descriptors"');
+      if (descriptorStartIdx !== -1) {
+        const closingDivIdx = html.indexOf('</div>', descriptorStartIdx);
+        if (closingDivIdx !== -1 && closingDivIdx + 6 < html.length) {
+          const sectionHtml = html.substring(descriptorStartIdx, closingDivIdx + 600);
+          if (sectionHtml.includes('AI Generated Content Disclosure')) {
+            hasDisclosureHeading = true;
+            const iMatch = sectionHtml.match(/<i>([\s\S]*?)<\/i>/i);
+            if (iMatch) {
+              descriptorText = iMatch[1].replace(/<[^>]+>/g, '').trim();
+            }
+          }
+          try {
+            await reader.cancel();
+          } catch (_) {}
+          break;
+        }
+      }
+
+      if (html.length > 400000) {
+        try {
+          await reader.cancel();
+        } catch (_) {}
+        break;
+      }
+    }
+  } catch (_) {}
+
+  if (!hasDisclosureHeading && html.includes('AI Generated Content Disclosure')) {
+    hasDisclosureHeading = true;
+    const iMatch = html.match(/AI Generated Content Disclosure[\s\S]*?<i>([\s\S]*?)<\/i>/i);
+    if (iMatch) {
+      descriptorText = iMatch[1].replace(/<[^>]+>/g, '').trim();
+    }
+  }
+
+  return { hasDisclosureHeading, descriptorText };
+};
+
+// --- App Checker with In-Flight Deduplication & Concurrency Limits ---
 const checkUrlForSlop = async (appId) => {
   if (memoryCache.has(appId)) {
     const entry = memoryCache.get(appId);
-    if (entry.ts && (Date.now() - entry.ts > CACHE_TTL)) {
+    if (entry.ts && Date.now() - entry.ts > CACHE_TTL) {
       memoryCache.delete(appId);
     } else {
-      return entry.value;
+      return entry;
     }
   }
 
-  const storageKey = `slop_cache_${appId}`;
-  const cached = await new Promise((resolve) =>
-    chrome.storage.local.get([storageKey], (res) => {
-      if (chrome.runtime.lastError) {
-        console.log('%c[AI Disclosure]%c', 'color:#a30100; font-weight:bold;', '', 'Storage error:', chrome.runtime.lastError.message);
-        resolve(undefined);
-        return;
-      }
-      resolve((res || {})[storageKey]);
-    }),
-  );
-
-  if (cached !== undefined) {
-   
-    const entry = typeof cached === 'object' && cached !== null
-      ? cached
-      : { value: cached, ts: 0 };
-
-    if (entry.ts && (Date.now() - entry.ts <= CACHE_TTL)) {
-      memoryCache.set(appId, entry);
-      console.log('%c[AI Disclosure]%c', 'color:#a30100; font-weight:bold;','',`AppID ${appId} UseAI:`, entry.value);
-      return entry.value;
-    }
-
+  if (inFlightFetches.has(appId)) {
+    return inFlightFetches.get(appId);
   }
 
-  try {
-    const response = await fetch(
-      `https://store.steampowered.com/app/${appId}/`,
-    );
-    const text = await response.text();
-    const isSlop = text.includes("AI Generated Content Disclosure");
-    const entry = { value: isSlop, ts: Date.now() };
-    memoryCache.set(appId, entry);
-    console.log('%c[AI Disclosure]%c', 'color:#a30100; font-weight:bold;','',`AppID ${appId} UseAI:`, isSlop);
-    chrome.storage.local.set({ [storageKey]: entry });
-
-    // Track stats
-    chrome.runtime.sendMessage({
-      type: 'incrementStats',
-      checked: 1,
-      flagged: isSlop ? 1 : 0,
+  const fetchPromise = (async () => {
+    const storageKey = `slop_cache_v3_${appId}`;
+    const cached = await new Promise((resolve) => {
+      chrome.storage.local.get([storageKey], (res) => {
+        if (chrome.runtime.lastError) {
+          resolve(undefined);
+          return;
+        }
+        resolve((res || {})[storageKey]);
+      });
     });
 
-    return isSlop;
-  } catch (e) {
-    return false;
+    if (cached !== undefined && cached !== null) {
+      if (cached.ts && Date.now() - cached.ts <= CACHE_TTL) {
+        memoryCache.set(appId, cached);
+        return cached;
+      }
+    }
+
+    return enqueueFetch(async () => {
+      try {
+        const response = await fetch(
+          `https://store.steampowered.com/app/${appId}/?l=english`,
+          { credentials: 'omit' }
+        );
+
+        if (!response.ok) {
+          return { value: false, categories: [], details: '', ts: Date.now() };
+        }
+
+        const { hasDisclosureHeading, descriptorText } = await extractDisclosureFromStream(response);
+
+        let result;
+        if (hasDisclosureHeading) {
+          result = classifyAiDisclosure(descriptorText || 'AI content used.');
+        } else {
+          result = { value: false, categories: [], details: '' };
+        }
+
+        const entry = { ...result, ts: Date.now() };
+        memoryCache.set(appId, entry);
+        chrome.storage.local.set({ [storageKey]: entry });
+
+        chrome.runtime.sendMessage({
+          type: 'incrementStats',
+          checked: 1,
+          flagged: entry.value ? 1 : 0,
+        });
+
+        return entry;
+      } catch (e) {
+        return { value: false, categories: [], details: '', ts: 0 };
+      }
+    });
+  })();
+
+  inFlightFetches.set(appId, fetchPromise);
+  try {
+    return await fetchPromise;
+  } finally {
+    inFlightFetches.delete(appId);
   }
 };
 
-const applySlopStyle = (rowElement, mode) => {
-  const title =
-    rowElement.querySelector(".title") ||
-    rowElement.querySelector(".tab_item_name") ||
-    rowElement.querySelector(".tab_item_title") ||
-    rowElement.querySelector(".match_name") ||
-    rowElement.querySelector(".name");
+// Check a list of AppIDs (e.g. for bundles like "3059520,4148930")
+const checkMultipleAppIds = async (appIdStr) => {
+  const ids = appIdStr.split(',').map((id) => id.trim()).filter((id) => /^\d+$/.test(id));
+  if (ids.length === 0) return { value: false, categories: [], details: '' };
 
-  rowElement.style.display = "";
+  for (const id of ids) {
+    const res = await checkUrlForSlop(id);
+    if (res && res.value) {
+      return res; // Return first matching flagged game
+    }
+  }
+  return { value: false, categories: [], details: '' };
+};
 
-  if (mode === "hide") {
-    rowElement.style.display = "none";
+// --- Reapply Styles across All Checked Games on Setting/Mode Change ---
+const reapplyStylesAcrossPage = () => {
+  const isWishlist = window.location.href.includes('/wishlist/');
+  document.querySelectorAll('[data-slop-checked="true"]').forEach((el) => {
+    const appIdStr = el.dataset.dsAppid;
+    if (appIdStr) {
+      const firstId = appIdStr.split(',')[0].trim();
+      const data = memoryCache.get(firstId);
+      if (data) {
+        const isFlagged = data.value && shouldFlagGame(data.categories, filterSettings);
+        if (isWishlist) {
+          applySlopStyleWishlist(el, isFlagged ? currentMode : 'none', data);
+        } else {
+          applyAccessibleSlopStyle(el, isFlagged ? currentMode : 'none', data);
+        }
+      }
+    }
+  });
+
+  if (currentPageAppId) {
+    handleStorePage();
+  }
+};
+
+// --- Universal Highlight Styler (Capsules, Carousels, Store Rows) ---
+const applyAccessibleSlopStyle = (el, mode, data) => {
+  const existingBadge = el.querySelector('.slop-badge');
+  const existingTint = el.querySelector('.slop-tint-overlay');
+
+  if (mode === 'none' || mode === '') {
+    el.style.display = '';
+    el.style.outline = '';
+    el.style.outlineOffset = '';
+    el.style.border = '';
+    el.style.removeProperty('background');
+    el.removeAttribute('aria-hidden');
+    el.classList.remove('slop-hidden', 'slop-highlighted');
+    if (existingBadge) existingBadge.style.display = 'none';
+    if (existingTint) existingTint.remove();
     return;
   }
 
-  // Common badge logic
-  let badge = rowElement.querySelector(".slop-badge");
-  if (!badge) {
-    badge = document.createElement("span");
-    badge.className = "slop-badge";
-    badge.innerText = " [AI CONTENT USED]";
-    badge.style.fontWeight = "bold";
-    badge.style.fontSize = "12px";
+  if (mode === 'hide') {
+    el.style.display = 'none';
+    el.setAttribute('aria-hidden', 'true');
+    el.classList.add('slop-hidden');
+    if (existingTint) existingTint.remove();
+    return;
+  }
 
-    if (title) {
-      title.style.overflow = "visible";
-      title.style.whiteSpace = "normal";
-      badge.style.marginLeft = "10px";
-      title.appendChild(badge);
-    } else {
-      badge.style.display = "block";
-      badge.style.textAlign = "center";
-      badge.style.width = "100%";
-      badge.style.backgroundColor = "rgba(0,0,0,0.8)";
-      badge.style.position = "absolute";
-      badge.style.bottom = "0";
-      badge.style.left = "0";
-      badge.style.zIndex = "10";
-      
-      const imgCtn = rowElement.querySelector(".capsule_image_ctn");
+  el.style.display = '';
+  el.removeAttribute('aria-hidden');
+  el.classList.remove('slop-hidden');
+
+  const categories = data ? data.categories : [];
+  const isToleratedOnly = isToleratedCategoryOnly(categories);
+  const badgeText = formatCategoryTag(categories);
+
+  const highlightColor = isToleratedOnly ? '#1976d2' : '#d32f2f';
+  const overlayHue = isToleratedOnly ? 'rgba(25, 118, 210, 0.28)' : 'rgba(211, 47, 47, 0.32)';
+
+  // Find exact image target: avoid putting relative positioning on entire calendar cells
+  let imgCtn =
+    el.querySelector('.capsule_image_ctn') ||
+    el.querySelector('[class*="CapsuleImageCtn"]') ||
+    el.querySelector('.CapsuleImageCtn') ||
+    el.querySelector('.main_capsule') ||
+    el.querySelector('.capsule') ||
+    el.querySelector('.home_carousel_thumb') ||
+    el.querySelector('.hero_capsule') ||
+    el.querySelector('.sale_capsule_image') ||
+    el.querySelector('[class*="SaleCapsuleImage"]') ||
+    el.querySelector('.cluster_capsule_image');
+
+  // If inside calendar or custom tile, locate image's immediate parent
+  if (!imgCtn) {
+    const imgEl = el.querySelector('img');
+    if (imgEl && imgEl.parentElement && imgEl.parentElement !== el) {
+      imgCtn = imgEl.parentElement;
+    } else if (imgEl) {
+      imgCtn = el;
+    }
+  }
+
+  if (mode === 'highlight') {
+    el.classList.add('slop-highlighted');
+
+    // 1. Search result row or text tab: apply background wash
+    if (el.classList.contains('search_result_row') || el.classList.contains('tab_item') || el.classList.contains('tab_row_item')) {
+      el.style.outline = `2px solid ${highlightColor}`;
+      el.style.outlineOffset = '-2px';
+      el.style.setProperty(
+        'background',
+        isToleratedOnly ? 'rgba(0, 30, 60, 0.85)' : 'rgba(60, 0, 0, 0.85)',
+        'important'
+      );
+    } else if (
+      el.matches('.home_content.single, .home_content_single_ctn') ||
+      el.matches(
+        '[class*="StoreSaleWidgetOuterContainer"], .StoreSaleWidgetOuterContainer, [class*="capsule_index_"], #StoreTemplate [role="button"], tr'
+      )
+    ) {
+      // 2. Recommendation block, React sale card, modern wishlist row, or chart row: outline entire container
+      el.style.outline = `2px solid ${highlightColor}`;
+      el.style.outlineOffset = '-2px';
+      el.style.borderRadius = '4px';
+
+      // Only apply dark background wash to recommendation banners, wishlist rows, and chart rows, not React sale widgets
+      if (!el.matches('[class*="StoreSaleWidgetOuterContainer"], .StoreSaleWidgetOuterContainer, [class*="capsule_index_"]')) {
+        el.style.setProperty(
+          'background',
+          isToleratedOnly ? 'rgba(0, 30, 60, 0.45)' : 'rgba(60, 0, 0, 0.45)',
+          'important'
+        );
+      }
+
       if (imgCtn) {
-        imgCtn.style.position = "relative";
-        imgCtn.appendChild(badge);
-      } else {
-        rowElement.style.position = "relative";
-        rowElement.appendChild(badge);
+        const computedPos = window.getComputedStyle(imgCtn).position;
+        if (computedPos === 'static') imgCtn.style.position = 'relative';
+        imgCtn.style.overflow = 'hidden';
+
+        let tint = imgCtn.querySelector('.slop-tint-overlay');
+        if (!tint) {
+          tint = document.createElement('div');
+          tint.className = 'slop-tint-overlay';
+          Object.assign(tint.style, {
+            position: 'absolute',
+            top: '0',
+            left: '0',
+            width: '100%',
+            height: '100%',
+            pointerEvents: 'none',
+            zIndex: '5',
+            borderRadius: 'inherit',
+            transition: 'background 0.2s ease',
+          });
+          imgCtn.appendChild(tint);
+        }
+        tint.style.display = 'block';
+        tint.style.background = overlayHue;
+        tint.style.boxShadow = 'none';
+      }
+    } else {
+      // 3. Card / Capsule: outline and red tint overlay strictly confined to image
+      el.style.outline = `2px solid ${highlightColor}`;
+      el.style.outlineOffset = '-2px';
+
+      if (imgCtn) {
+        const computedPos = window.getComputedStyle(imgCtn).position;
+        if (computedPos === 'static') imgCtn.style.position = 'relative';
+        imgCtn.style.overflow = 'hidden';
+
+        let tint = imgCtn.querySelector('.slop-tint-overlay');
+        if (!tint) {
+          tint = document.createElement('div');
+          tint.className = 'slop-tint-overlay';
+          Object.assign(tint.style, {
+            position: 'absolute',
+            top: '0',
+            left: '0',
+            width: '100%',
+            height: '100%',
+            pointerEvents: 'none',
+            zIndex: '5',
+            borderRadius: 'inherit',
+            transition: 'background 0.2s ease',
+          });
+          imgCtn.appendChild(tint);
+        }
+        tint.style.display = 'block';
+        tint.style.background = overlayHue;
+        tint.style.boxShadow = 'none';
       }
     }
+  } else {
+    // Mode is "text" (clean, no background wash or red tint)
+    el.style.outline = '';
+    el.style.outlineOffset = '';
+    el.style.border = '';
+    el.style.removeProperty('background');
+    el.classList.remove('slop-highlighted');
+    if (existingTint) existingTint.remove();
   }
 
-  if (badge) {
-    if (mode === "highlight") {
-      badge.style.color = "#a30100";
+  // --- Badge Tag ---
+  const titleEl =
+    el.querySelector('.single_title') ||
+    el.querySelector('.title') ||
+    el.querySelector('[class*="StoreSaleWidgetTitle"]') ||
+    el.querySelector('.StoreSaleWidgetTitle') ||
+    el.querySelector('[class*="AppTitle"]') ||
+    el.querySelector('.tab_item_name') ||
+    el.querySelector('.tab_item_title') ||
+    el.querySelector('.match_name') ||
+    el.querySelector('.name') ||
+    (el.tagName === 'TR' ? el.querySelector('td:nth-child(2) a[href*="/app/"], td a[href*="/app/"]') : null);
+
+  const existingTitleBadge = titleEl ? titleEl.querySelector('.slop-badge') : null;
+  let badge = existingTitleBadge || existingBadge;
+
+  if (!badge) {
+    badge = document.createElement('span');
+    badge.className = 'slop-badge';
+    badge.setAttribute('role', 'status');
+    badge.setAttribute('aria-label', `Notice: ${badgeText}`);
+
+    if (titleEl) {
+      badge.style.display = 'inline-block';
+      badge.style.fontSize = '11px';
+      badge.style.fontWeight = 'bold';
+      badge.style.padding = '1px 5px';
+      badge.style.marginLeft = '8px';
+      badge.style.borderRadius = '3px';
+      badge.style.verticalAlign = 'middle';
+      badge.style.letterSpacing = '0.3px';
+      titleEl.appendChild(badge);
     } else {
-      badge.style.color = "#888"; 
+      badge.style.display = 'block';
+      badge.style.position = 'absolute';
+      badge.style.bottom = '4px';
+      badge.style.left = '4px';
+      badge.style.zIndex = '15';
+      badge.style.fontSize = '10px';
+      badge.style.fontWeight = 'bold';
+      badge.style.padding = '2px 6px';
+      badge.style.borderRadius = '2px';
+      badge.style.boxShadow = '0 1px 4px rgba(0,0,0,0.7)';
+
+      const containerForBadge = imgCtn || el;
+      const computedPos = window.getComputedStyle(containerForBadge).position;
+      if (computedPos === 'static') containerForBadge.style.position = 'relative';
+      containerForBadge.appendChild(badge);
     }
   }
 
-  if (mode === "highlight") {
-    rowElement.style.border = "2px solid #a30100";
-    rowElement.style.setProperty(
-      "background",
-      "rgba(50, 0, 0, 0.8)",
-      "important",
-    );
+  badge.style.display = '';
+  badge.textContent = `[${badgeText}]`;
+
+  if (mode === 'highlight') {
+    badge.style.backgroundColor = highlightColor;
+    badge.style.color = '#ffffff';
+    badge.style.border = `1px solid ${highlightColor}`;
   } else {
-    rowElement.style.border = "";
-    rowElement.style.removeProperty("background");
+    badge.style.backgroundColor = 'rgba(20, 24, 30, 0.9)';
+    badge.style.color = isToleratedOnly ? '#64b5f6' : '#ff8a80';
+    badge.style.border = `1px solid ${isToleratedOnly ? '#1976d2' : '#d32f2f'}`;
   }
 };
 
-// Wishlist items use obfuscated class names, so we find the title anchor
-// by looking for links whose href contains /app/. The first such link with
-// text content is treated as the title element.
-const applySlopStyleWishlist = (rowElement, mode) => {
-  rowElement.style.display = "";
+// --- Apply Styles to Wishlist Items ---
+const applySlopStyleWishlist = (rowElement, mode, data) => {
+  const existingBadge = rowElement.querySelector('.slop-badge');
 
-  // "hide" mode falls through to highlight on the wishlist page
-  // because display:none breaks the wishlist layout
-  const effectiveMode = mode === "hide" ? "highlight" : mode;
+  if (mode === 'none' || mode === '') {
+    rowElement.style.display = '';
+    rowElement.style.outline = '';
+    rowElement.style.outlineOffset = '';
+    rowElement.style.removeProperty('background');
+    if (existingBadge) existingBadge.style.display = 'none';
+    return;
+  }
 
-  let badge = rowElement.querySelector(".slop-badge");
+  const effectiveMode = mode === 'hide' ? 'highlight' : mode;
+  rowElement.style.display = '';
+
+  const categories = data ? data.categories : [];
+  const isToleratedOnly = isToleratedCategoryOnly(categories);
+  const badgeLabel = formatCategoryTag(categories);
+
+  let badge = existingBadge;
   if (!badge) {
-    badge = document.createElement("a");
-    badge.className = "slop-badge";
-    badge.textContent = "AI Content Used";
-    badge.setAttribute("role", "button");
-    badge.setAttribute("tabindex", "0");
-    // Style as a pill badge matching the "Demo Available" tag
+    badge = document.createElement('a');
+    badge.className = 'slop-badge';
+    badge.setAttribute('role', 'status');
+    badge.setAttribute('aria-label', `Notice: ${badgeLabel}`);
+    badge.setAttribute('tabindex', '0');
     Object.assign(badge.style, {
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      padding: "2px 6px",
-      borderRadius: "2px",
-      fontSize: "11px",
-      fontWeight: "bold",
-      lineHeight: "normal",
-      textDecoration: "none",
-      cursor: "default",
-      whiteSpace: "nowrap",
-      alignSelf: "stretch",
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '2px 8px',
+      borderRadius: '2px',
+      fontSize: '11px',
+      fontWeight: 'bold',
+      lineHeight: 'normal',
+      textDecoration: 'none',
+      cursor: 'default',
+      whiteSpace: 'nowrap',
+      alignSelf: 'stretch',
     });
 
-    // Place above the "Add to Cart" button
     const buttons = rowElement.querySelectorAll('button');
     let cartButton = null;
     for (const btn of buttons) {
-      if (btn.textContent.trim() === "Add to Cart") {
+      if (btn.textContent.trim() === 'Add to Cart') {
         cartButton = btn;
         break;
       }
     }
 
-    if (cartButton) {
-      // Insert before the button's parent div (the cart button container)
+    if (cartButton && cartButton.parentElement) {
       const cartContainer = cartButton.parentElement;
       cartContainer.parentElement.insertBefore(badge, cartContainer);
     } else {
-      // Fallback: append to the row
       rowElement.appendChild(badge);
     }
   }
 
-  if (badge) {
-    if (effectiveMode === "highlight") {
-      badge.style.backgroundColor = "#a30100";
-      badge.style.color = "#fff";
-      badge.style.border = "1px solid #a30100";
-    } else {
-      badge.style.backgroundColor = "rgba(255,255,255,0.1)";
-      badge.style.color = "#c7d5e0";
-      badge.style.border = "1px solid rgba(255,255,255,0.2)";
-    }
-  }
+  badge.style.display = 'flex';
+  badge.textContent = badgeLabel;
 
-  if (effectiveMode === "highlight") {
-    rowElement.style.border = "2px solid #a30100";
+  const color = isToleratedOnly ? '#1976d2' : '#d32f2f';
+  if (effectiveMode === 'highlight') {
+    badge.style.backgroundColor = color;
+    badge.style.color = '#ffffff';
+    rowElement.style.outline = `2px solid ${color}`;
+    rowElement.style.outlineOffset = '-2px';
     rowElement.style.setProperty(
-      "background",
-      "rgba(50, 0, 0, 0.8)",
-      "important",
+      'background',
+      isToleratedOnly ? 'rgba(0, 30, 60, 0.85)' : 'rgba(60, 0, 0, 0.85)',
+      'important'
     );
   } else {
-    rowElement.style.border = "";
-    rowElement.style.removeProperty("background");
+    badge.style.backgroundColor = 'rgba(255,255,255,0.1)';
+    badge.style.color = isToleratedOnly ? '#64b5f6' : '#c7d5e0';
+    badge.style.border = '1px solid rgba(255,255,255,0.2)';
+    rowElement.style.outline = '';
+    rowElement.style.outlineOffset = '';
+    rowElement.style.removeProperty('background');
   }
 };
 
-const markSearchResult = (rowElement) => {
-  if (rowElement.dataset.slopChecked) return;
-  rowElement.dataset.slopChecked = "true";
+// --- Badge Counter Debounce ---
+let badgeUpdateTimer = null;
+const queueBadgeUpdate = () => {
+  if (badgeUpdateTimer) clearTimeout(badgeUpdateTimer);
+  badgeUpdateTimer = setTimeout(() => {
+    chrome.runtime.sendMessage({ type: 'updateBadge', count: flaggedCount });
+  }, 250);
+};
 
-  const appId = rowElement.dataset.dsAppid;
+// --- Universal Store Element Processor ---
+const processStoreElement = (el) => {
+  if (el.dataset.slopChecked) return;
+
+  // 1. Ignore UI buttons, wishlist/queue actions, and navigation controls FIRST
+  const isExcludedControl = (node) => {
+    if (!node) return false;
+
+    // Never exclude game cards, rows, or elements containing game artwork
+    if (
+      node.matches(
+        '.search_result_row, .tab_item, .tab_row_item, .home_content.single, .home_content_single_ctn, [class*="StoreSaleWidgetOuterContainer"], .StoreSaleWidgetOuterContainer, .sale_capsule, .store_capsule'
+      ) ||
+      node.querySelector('img, .capsule, .capsule_image_ctn, [class*="CapsuleImageCtn"]')
+    ) {
+      return false;
+    }
+
+    if (
+      node.matches(
+        'button, .btnv6_blue_hoverfade, .btnv6_white_transparent, .btn_small_tall, [class*="queue_btn"], [class*="wishlist_btn"], .game_area_purchase_game, .queue_control_button'
+      ) ||
+      node.closest('.btn_actions, .queue_actions_ctn, .cluster_control_ctn, .home_content.single_buttonbar, [class*="buttonbar"]')
+    ) {
+      return true;
+    }
+
+    // Exact action text matching restricted to small leaf link/span controls
+    if (node.tagName === 'A' || node.tagName === 'SPAN') {
+      const txt = (node.textContent || '').trim().toLowerCase();
+      if (
+        txt.length < 40 &&
+        /^(visit product page|add to wishlist|add to cart|add to your wishlist|ignore|find more like this|follow|customize|explore|view all|more like this)$/i.test(
+          txt
+        )
+      ) {
+        return true;
+      }
+    }
+
+    return false;
+  };
+
+  if (isExcludedControl(el)) {
+    el.dataset.slopChecked = 'true';
+    return;
+  }
+
+  // 2. Exclude inline text links (e.g. inside "Since you wish for <Game>", reviews, or curator notes)
+  // Genuine game cards/capsules always contain an image thumbnail or are recognized row/widget items.
+  const hasCapsuleImage = !!(
+    el.querySelector('img, .capsule, .capsule_image_ctn, [class*="CapsuleImageCtn"], .large_screenshot, [style*="background-image"]') ||
+    el.matches('.search_result_row, .tab_item, .tab_row_item, [class*="StoreSaleWidgetOuterContainer"], .StoreSaleWidgetOuterContainer') ||
+    el.closest('.search_result_row, .tab_item, .tab_row_item, [class*="StoreSaleWidgetOuterContainer"], .StoreSaleWidgetOuterContainer')
+  );
+
+  if (el.tagName === 'A' && !hasCapsuleImage) {
+    el.dataset.slopChecked = 'true';
+    return;
+  }
+
+  // 3. Promote recommendation blocks, React sale widgets, modern React wishlist items, and table rows to outer container
+  const recommendationCard = el.closest('.home_content.single, .home_content_single_ctn');
+  const saleCard = el.closest(
+    '[class*="StoreSaleWidgetOuterContainer"], .StoreSaleWidgetOuterContainer, [class*="capsule_index_"], #StoreTemplate [role="button"], tr'
+  );
+
+  if (recommendationCard) {
+    const targetCard = recommendationCard.matches('.home_content.single')
+      ? recommendationCard
+      : (recommendationCard.querySelector('.home_content.single') || recommendationCard);
+
+    // If card was already checked or is currently being processed, mark current child and abort
+    if (targetCard.dataset.slopChecked) {
+      el.dataset.slopChecked = 'true';
+      return;
+    }
+    // Synchronously claim the entire card and all its child links/capsules
+    targetCard.dataset.slopChecked = 'true';
+    targetCard.querySelectorAll('*').forEach((child) => {
+      child.dataset.slopChecked = 'true';
+    });
+    el = targetCard;
+  } else if (saleCard) {
+    if (saleCard.dataset.slopChecked) {
+      el.dataset.slopChecked = 'true';
+      return;
+    }
+    saleCard.dataset.slopChecked = 'true';
+    saleCard.querySelectorAll('*').forEach((child) => {
+      child.dataset.slopChecked = 'true';
+    });
+    el = saleCard;
+  }
+
+  // 4. Prevent nested elements from getting duplicate badges
+  if (el.closest('.slop-highlighted') && !el.classList.contains('tab_item') && !el.classList.contains('slop-highlighted')) {
+    el.dataset.slopChecked = 'true';
+    return;
+  }
+
+  // 5. Do not treat multi-game container sections (e.g. calendar day columns, carousel tracks) as a single game capsule
+  if (
+    !el.matches(
+      '.home_content.single, .home_content_single_ctn, [class*="StoreSaleWidgetOuterContainer"], .StoreSaleWidgetOuterContainer'
+    )
+  ) {
+    const childCapsules = el.querySelectorAll(
+      '.sale_capsule, .store_capsule, .search_result_row, .tab_item, [class*="StoreSaleWidgetOuterContainer"], .capsule_image_ctn'
+    );
+    if (childCapsules.length > 1) {
+      el.dataset.slopChecked = 'true';
+      return;
+    }
+  }
+
+  let appId = el.dataset.dsAppid;
+  if (!appId) {
+    const appItem = el.querySelector('.gamelink[data-ds-appid], .capsule_image_ctn[data-ds-appid], [data-ds-appid]');
+    if (appItem && appItem.dataset.dsAppid) {
+      appId = appItem.dataset.dsAppid;
+    }
+  }
+  if (!appId) {
+    const link = el.tagName === 'A' ? el : el.querySelector('a[href*="/app/"]');
+    if (link && link.href) {
+      const match = link.href.match(/\/app\/(\d+)/);
+      if (match) appId = match[1];
+    }
+  }
+
   if (!appId) return;
 
-  checkUrlForSlop(appId).then((isSlop) => {
-    if (isSlop) {
-      applySlopStyle(rowElement, currentMode);
+  // On an individual store page (/app/12345/...), do NOT outline self-links or breadcrumbs!
+  if (currentPageAppId && appId.split(',')[0].trim() === currentPageAppId) {
+    el.dataset.slopChecked = 'true';
+    return;
+  }
+
+  el.dataset.slopChecked = 'true';
+  el.dataset.dsAppid = appId;
+
+  // Use checkMultipleAppIds to handle bundles / comma-separated AppIDs (e.g. F1 25)
+  checkMultipleAppIds(appId).then((data) => {
+    if (data && data.value) {
+      if (!shouldFlagGame(data.categories, filterSettings)) {
+        return;
+      }
+      applyAccessibleSlopStyle(el, currentMode, data);
       flaggedCount++;
-      chrome.runtime.sendMessage({ type: 'updateBadge', count: flaggedCount });
+      queueBadgeUpdate();
     }
   });
 };
 
+// --- Store Page Banner Handling ---
 const handleStorePage = () => {
-  if (document.getElementById("slop-warning-banner")) return;
-
-  const disclosureDivs = document.querySelectorAll(
-    "#game_area_content_descriptors",
-  );
-
+  const disclosureDivs = document.querySelectorAll('#game_area_content_descriptors');
   for (const disclosureDiv of disclosureDivs) {
-    const headers = Array.from(disclosureDiv.querySelectorAll("h2"));
-
-    const aiHeader = headers.find((h) =>
-      h.textContent.includes("AI Generated Content Disclosure"),
-    );
+    const headers = Array.from(disclosureDiv.querySelectorAll('h2'));
+    const aiHeader = headers.find((h) => h.textContent.includes('AI Generated Content Disclosure'));
 
     if (aiHeader) {
-      //console.log("Found AI content disclosure");
-      if (currentMode === "hide") {
-      }
-
-      let details = "Unknown usage";
+      let details = 'AI content disclosure specified by developer.';
       let sibling = aiHeader.nextElementSibling;
-      while (sibling && sibling.tagName !== "H2") {
-        const iTag =
-          sibling.tagName === "I" ? sibling : sibling.querySelector("i");
+      while (sibling && sibling.tagName !== 'H2') {
+        const iTag = sibling.tagName === 'I' ? sibling : sibling.querySelector('i');
         if (iTag) {
           details = iTag.textContent.trim();
           break;
@@ -283,182 +872,227 @@ const handleStorePage = () => {
         sibling = sibling.nextElementSibling;
       }
 
-      const targetContainer = document.getElementById(
-        "responsive_apppage_details_left_ctn",
-      );
-      if (targetContainer) {
-        const banner = document.createElement("div");
-        banner.id = "slop-warning-banner";
+      const classification = classifyAiDisclosure(details);
 
-        banner.innerHTML = `<img src="${chrome.runtime.getURL(
-          "icons/iconsvg.svg",
-        )}" style="width: 32px; height: 32px; float: right; margin-left: 10px; margin-bottom: 5px;"><div style="font-size: 16px; color: #a30100; margin-bottom: 5px;">AI Disclosure</div><div style="font-size: 13px;">${details}</div>`;
+      const titleHeader = document.querySelector('.apphub_AppName');
+      if (titleHeader && !titleHeader.querySelector('.slop-title-badge')) {
+        const titleBadge = document.createElement('span');
+        titleBadge.className = 'slop-title-badge';
+        titleBadge.setAttribute('role', 'status');
+        const isToleratedOnly = isToleratedCategoryOnly(classification.categories);
+        const tagText = formatCategoryTag(classification.categories);
+        titleBadge.textContent = `[${tagText}]`;
+        Object.assign(titleBadge.style, {
+          display: 'inline-block',
+          fontSize: '14px',
+          fontWeight: 'bold',
+          marginLeft: '12px',
+          verticalAlign: 'middle',
+          color: isToleratedOnly ? '#64b5f6' : '#ff8a80',
+          backgroundColor: isToleratedOnly ? 'rgba(25,118,210,0.25)' : 'rgba(211,47,47,0.25)',
+          border: `1px solid ${isToleratedOnly ? '#1976d2' : '#d32f2f'}`,
+          padding: '2px 8px',
+          borderRadius: '3px',
+          letterSpacing: '0.4px',
+        });
+        titleHeader.appendChild(titleBadge);
+      }
+
+      if (!shouldFlagGame(classification.categories, filterSettings)) {
+        const existingBanner = document.getElementById('slop-warning-banner');
+        if (existingBanner) existingBanner.remove();
+        return true;
+      }
+
+      if (document.getElementById('slop-warning-banner')) return true;
+
+      const targetContainer =
+        document.getElementById('game_area_purchase') ||
+        document.querySelector('.game_area_purchase') ||
+        document.getElementById('responsive_apppage_details_left_ctn');
+
+      if (targetContainer) {
+        const banner = document.createElement('div');
+        banner.id = 'slop-warning-banner';
+        banner.setAttribute('role', 'alert');
+
+        const isToleratedOnly = isToleratedCategoryOnly(classification.categories);
+        const themeColor = isToleratedOnly ? '#1976d2' : '#d32f2f';
+
         Object.assign(banner.style, {
-          background:
-            "linear-gradient( 90deg, rgba(0,0,0,0.5) 5%,rgba(0,0,0,0.65) 95%)",
-          border: "1px solid #a30100",
-          padding: "16px",
-          marginBottom: "8px",
-          color: "#c6d4df",
+          background: 'linear-gradient(90deg, rgba(30,15,15,0.95) 5%, rgba(20,16,18,0.95) 95%)',
+          border: `2px solid ${themeColor}`,
+          padding: '14px 16px',
+          marginBottom: '16px',
+          color: '#c6d4df',
+          borderRadius: '4px',
+          boxShadow: '0 3px 12px rgba(0,0,0,0.6)',
         });
 
-        targetContainer.prepend(banner);
+        const icon = document.createElement('img');
+        icon.src = chrome.runtime.getURL('icons/iconsvg.svg');
+        icon.setAttribute('alt', 'AI Warning Icon');
+        Object.assign(icon.style, {
+          width: '28px',
+          height: '28px',
+          float: 'right',
+          marginLeft: '12px',
+          marginBottom: '4px',
+        });
+        banner.appendChild(icon);
 
-      
-        chrome.runtime.sendMessage({ type: 'updateBadge', count: 1 });
+        const headerEl = document.createElement('div');
+        headerEl.style.fontSize = '14px';
+        headerEl.style.color = themeColor;
+        headerEl.style.fontWeight = 'bold';
+        headerEl.style.marginBottom = '6px';
+        headerEl.style.letterSpacing = '0.5px';
+        headerEl.style.textTransform = 'uppercase';
+        headerEl.textContent = `AI Content Disclosure: ${classification.categories.map((c) => c.toUpperCase()).join(', ')}`;
+        banner.appendChild(headerEl);
+
+        const bodyEl = document.createElement('div');
+        bodyEl.style.fontSize = '13px';
+        bodyEl.style.lineHeight = '1.4';
+        bodyEl.style.color = '#e0e0e0';
+        bodyEl.textContent = details;
+        banner.appendChild(bodyEl);
+
+        targetContainer.parentElement.insertBefore(banner, targetContainer);
+
+        flaggedCount = 1;
+        queueBadgeUpdate();
         chrome.runtime.sendMessage({
           type: 'incrementStats',
           checked: 1,
           flagged: 1,
         });
 
-        return;
+        return true;
       }
-    }/* else {
-      //shows a banner saying no AI content detected
-
-      let details = "No AI content usage";
-
-      const targetContainer = document.getElementById(
-        "responsive_apppage_details_left_ctn",
-      );
-      if (targetContainer) {
-        const banner = document.createElement("div");
-        banner.id = "slop-warning-banner";
-
-        banner.innerHTML = `<img src="${chrome.runtime.getURL(
-          "icons/iconsvg.svg",
-        )}" style="width: 32px; height: 32px; float: right; margin-left: 10px; margin-bottom: 5px;"><div style="font-size: 16px; color: #00a357; margin-bottom: 5px;">AI Disclosure</div><div style="font-size: 13px;">${details}</div>`;
-        Object.assign(banner.style, {
-          background:
-            "linear-gradient( 90deg, rgba(0,0,0,0.5) 5%,rgba(0,0,0,0.65) 95%)",
-          border: "1px solid #00a357",
-          padding: "16px",
-          marginBottom: "8px",
-          color: "#c6d4df",
-        });
-        targetContainer.prepend(banner);
-        return;
-      }
-        
-    }*/
+    }
   }
+  return false;
 };
 
-const initSearchPageObserver = () => {
-  const observer = new IntersectionObserver(
+// --- Universal Storewide Observer ---
+const initUniversalStoreObserver = () => {
+  const intersectionObserver = new IntersectionObserver(
     (entries) => {
       entries.forEach((entry) => {
         if (entry.isIntersecting) {
-          markSearchResult(entry.target);
-          observer.unobserve(entry.target);
+          processStoreElement(entry.target);
+          intersectionObserver.unobserve(entry.target);
         }
       });
     },
-    { rootMargin: "200px" },
+    { rootMargin: '350px' }
   );
 
-  const listObserver = new MutationObserver(() => {
-    document
-      .querySelectorAll(
-        ".search_result_row:not([data-slop-checked]), .tab_item:not([data-slop-checked]), .tab_row_item:not([data-slop-checked]), .sale_capsule:not([data-slop-checked]), [data-ds-appid]:not([data-slop-checked])",
-      )
-      .forEach((row) => {
-        observer.observe(row);
-      });
-  });
+  const STORE_SELECTOR = [
+    '.search_result_row:not([data-slop-checked])',
+    '.tab_item:not([data-slop-checked])',
+    '.tab_row_item:not([data-slop-checked])',
+    '.home_content.single:not([data-slop-checked])',
+    '.home_content_single_ctn:not([data-slop-checked])',
+    '[class*="StoreSaleWidgetOuterContainer"]:not([data-slop-checked])',
+    '.StoreSaleWidgetOuterContainer:not([data-slop-checked])',
+    '[class*="capsule_index_"]:not([data-slop-checked])',
+    '#StoreTemplate [role="button"]:not([data-slop-checked])',
+    '.sale_capsule:not([data-slop-checked])',
+    '.store_capsule:not([data-slop-checked])',
+    '.carousel_thumb:not([data-slop-checked])',
+    '[data-ds-appid]:not([data-slop-checked])',
+    'a[href*="/app/"]:not([data-slop-checked])',
+  ].join(', ');
 
-  const searchContainer = document.getElementById("search_results");
-  const targetNode = searchContainer || document.body;
-  if (targetNode) {
-    listObserver.observe(targetNode, { childList: true, subtree: true });
-  }
+  let rafScheduled = false;
+  const observePendingElements = () => {
+    rafScheduled = false;
+    document.querySelectorAll(STORE_SELECTOR).forEach((el) => {
+      if (el.tagName === 'A' && !el.dataset.dsAppid && el.children.length === 0 && !el.textContent.trim()) return;
+      intersectionObserver.observe(el);
+    });
+  };
 
-  document
-    .querySelectorAll(".search_result_row, .tab_item, .tab_row_item, .sale_capsule, [data-ds-appid]")
-    .forEach((row) => observer.observe(row));
-};
-
-const addfilterModePanel = () => {
-  const optionsContainer = document.getElementById("additional_search_options");
-  if (!optionsContainer || document.getElementById("slop-mode-filter")) return;
-
-  const modes = [
-    { value: "hide", label: "Hide AI content" },
-    { value: "highlight", label: "Highlight AI content" },
-    { value: "text", label: "Show AI label" },
-  ];
-
-  const panelDiv = document.createElement("div");
-  panelDiv.className = "block search_collapse_block";
-  panelDiv.id = "slop-mode-filter";
-  panelDiv.style.position = "relative";
-  panelDiv.setAttribute("data-collapse-name", "slop_filter");
-  panelDiv.setAttribute("data-gpnav", "rows");
-  panelDiv.setAttribute("data-gpfocus", "group");
-
-  const header = document.createElement("div");
-  header.setAttribute(
-    "data-panel",
-    '{"focusable":true,"clickOnActivate":true}',
-  );
-  header.setAttribute("role", "button");
-  header.className = "block_header labs_block_header";
-  header.style.position = "relative";
-  // const logo = document.createElement("img");
-  // logo.src = chrome.runtime.getURL("icons/iconsvg.svg");
-  // logo.style.width = "24px";
-  // logo.style.height = "24px";
-  // logo.style.position = "absolute";
-  // logo.style.right = "1px";
-  // logo.style.top = "50%";
-  // logo.style.transform = "translateY(-50%)";
-  // header.appendChild(logo);
-  const headerText = document.createElement("div");
-  headerText.textContent = "Narrow by AI Usage";
-  header.appendChild(headerText);
-
-  const content = document.createElement("div");
-  content.className = "block_content block_content_inner";
-
-  header.addEventListener("click", () => {
-    if (content.style.display === "none") {
-      content.style.display = "block";
-    } else {
-      content.style.display = "none";
+  const mutationObserver = new MutationObserver((mutations) => {
+    let hasAdditions = false;
+    for (const m of mutations) {
+      if (m.addedNodes.length > 0) {
+        hasAdditions = true;
+        break;
+      }
+    }
+    if (hasAdditions && !rafScheduled) {
+      rafScheduled = true;
+      requestAnimationFrame(observePendingElements);
     }
   });
 
+  mutationObserver.observe(document.body || document.documentElement, { childList: true, subtree: true });
+  observePendingElements();
+};
+
+// --- In-Page Filter Mode Panel (Search Page) ---
+const addfilterModePanel = () => {
+  const optionsContainer = document.getElementById('additional_search_options');
+  if (!optionsContainer || document.getElementById('slop-mode-filter')) return;
+
+  const modes = [
+    { value: 'hide', label: 'Hide AI content' },
+    { value: 'highlight', label: 'Highlight AI content' },
+    { value: 'text', label: 'Show AI label' },
+  ];
+
+  const panelDiv = document.createElement('div');
+  panelDiv.className = 'block search_collapse_block';
+  panelDiv.id = 'slop-mode-filter';
+  panelDiv.style.position = 'relative';
+  panelDiv.setAttribute('data-collapse-name', 'slop_filter');
+  panelDiv.setAttribute('data-gpnav', 'rows');
+  panelDiv.setAttribute('data-gpfocus', 'group');
+
+  const header = document.createElement('div');
+  header.setAttribute('data-panel', '{"focusable":true,"clickOnActivate":true}');
+  header.setAttribute('role', 'button');
+  header.className = 'block_header labs_block_header';
+  header.style.position = 'relative';
+
+  const headerText = document.createElement('div');
+  headerText.textContent = 'Narrow by AI Usage';
+  header.appendChild(headerText);
+
+  const content = document.createElement('div');
+  content.className = 'block_content block_content_inner';
+
+  header.addEventListener('click', () => {
+    content.style.display = content.style.display === 'none' ? 'block' : 'none';
+  });
+
   modes.forEach((mode) => {
-    const row = document.createElement("div");
-    row.className =
-      "tab_filter_control_row " + (currentMode === mode.value ? "checked" : "");
-    row.setAttribute("data-param", "slop_mode");
-    row.setAttribute("data-value", mode.value);
-    row.setAttribute("data-clientside", "1");
+    const row = document.createElement('div');
+    row.className = 'tab_filter_control_row ' + (currentMode === mode.value ? 'checked' : '');
+    row.setAttribute('data-param', 'slop_mode');
+    row.setAttribute('data-value', mode.value);
+    row.setAttribute('data-clientside', '1');
 
-    const control = document.createElement("span");
-    control.setAttribute(
-      "data-panel",
-      '{"focusable":true,"clickOnActivate":true}',
-    );
-    control.setAttribute("role", "button");
-    control.className =
-      "tab_filter_control tab_filter_control_include " +
-      (currentMode === mode.value ? "checked" : "");
-    control.setAttribute("data-param", "slop_mode");
-    control.setAttribute("data-value", mode.value);
-    control.setAttribute("data-clientside", "1");
-    control.setAttribute("data-gpfocus", "item");
+    const control = document.createElement('span');
+    control.setAttribute('data-panel', '{"focusable":true,"clickOnActivate":true}');
+    control.setAttribute('role', 'button');
+    control.className = 'tab_filter_control tab_filter_control_include ' + (currentMode === mode.value ? 'checked' : '');
+    control.setAttribute('data-param', 'slop_mode');
+    control.setAttribute('data-value', mode.value);
+    control.setAttribute('data-clientside', '1');
+    control.setAttribute('data-gpfocus', 'item');
 
-    const labelContainer = document.createElement("span");
-    labelContainer.className = "tab_filter_label_container";
+    const labelContainer = document.createElement('span');
+    labelContainer.className = 'tab_filter_label_container';
 
-    const checkbox = document.createElement("span");
-    checkbox.className = "tab_filter_control_checkbox";
+    const checkbox = document.createElement('span');
+    checkbox.className = 'tab_filter_control_checkbox';
 
-    const label = document.createElement("span");
-    label.className = "tab_filter_control_label";
+    const label = document.createElement('span');
+    label.className = 'tab_filter_control_label';
     label.textContent = mode.label;
 
     labelContainer.appendChild(checkbox);
@@ -467,31 +1101,63 @@ const addfilterModePanel = () => {
     row.appendChild(control);
     content.appendChild(row);
 
-    control.addEventListener("click", () => {
+    control.addEventListener('click', () => {
       chrome.storage.sync.set({ filterMode: mode.value }, () => {
-        if (chrome.runtime.lastError) {
-          console.log('%c[AI Disclosure]%c', 'color:#a30100; font-weight:bold;', '', 'Error saving mode:', chrome.runtime.lastError.message);
-          return;
-        }
         currentMode = mode.value;
-
-        const panel = document.getElementById("slop-mode-filter");
+        const panel = document.getElementById('slop-mode-filter');
         if (panel) {
-          panel
-            .querySelectorAll(".tab_filter_control_row, .tab_filter_control")
-            .forEach((el) => {
-              el.classList.toggle("checked", el.dataset.value === currentMode);
-            });
-        }
-
-        document
-          .querySelectorAll('[data-slop-checked="true"]')
-          .forEach((row) => {
-            const appId = row.dataset.dsAppid;
-            if (appId && memoryCache.get(appId)?.value) {
-              applySlopStyle(row, currentMode);
-            }
+          panel.querySelectorAll('.tab_filter_control_row, .tab_filter_control').forEach((el) => {
+            el.classList.toggle('checked', el.dataset.value === currentMode);
           });
+        }
+        reapplyStylesAcrossPage();
+      });
+    });
+  });
+
+  const exceptions = [
+    { key: 'ignoreLocalization', label: 'Ignore Translations' },
+    { key: 'ignoreCode', label: 'Ignore Code / Tools' },
+    { key: 'ignoreConceptArt', label: 'Ignore Concept Art' },
+    { key: 'ignoreMarketing', label: 'Ignore Marketing/Capsule' },
+  ];
+
+  exceptions.forEach((exc, index) => {
+    const excRow = document.createElement('div');
+    excRow.className = 'tab_filter_control_row ' + (filterSettings[exc.key] ? 'checked' : '');
+    if (index === 0) {
+      excRow.style.marginTop = '6px';
+      excRow.style.borderTop = '1px solid rgba(255,255,255,0.1)';
+      excRow.style.paddingTop = '6px';
+    }
+
+    const excControl = document.createElement('span');
+    excControl.className = 'tab_filter_control tab_filter_control_include ' + (filterSettings[exc.key] ? 'checked' : '');
+    excControl.setAttribute('role', 'button');
+
+    const labelCtn = document.createElement('span');
+    labelCtn.className = 'tab_filter_label_container';
+
+    const chk = document.createElement('span');
+    chk.className = 'tab_filter_control_checkbox';
+
+    const lbl = document.createElement('span');
+    lbl.className = 'tab_filter_control_label';
+    lbl.textContent = exc.label;
+
+    labelCtn.appendChild(chk);
+    labelCtn.appendChild(lbl);
+    excControl.appendChild(labelCtn);
+    excRow.appendChild(excControl);
+    content.appendChild(excRow);
+
+    excControl.addEventListener('click', () => {
+      const newVal = !filterSettings[exc.key];
+      chrome.storage.sync.set({ [exc.key]: newVal }, () => {
+        filterSettings[exc.key] = newVal;
+        excRow.classList.toggle('checked', newVal);
+        excControl.classList.toggle('checked', newVal);
+        reapplyStylesAcrossPage();
       });
     });
   });
@@ -508,11 +1174,11 @@ const addfilterModePanel = () => {
 };
 
 const observeAdditionalOptions = () => {
-  const optionsContainer = document.getElementById("additional_search_options");
+  const optionsContainer = document.getElementById('additional_search_options');
   if (optionsContainer) {
     addfilterModePanel();
     const observer = new MutationObserver(() => {
-      if (!document.getElementById("slop-mode-filter")) {
+      if (!document.getElementById('slop-mode-filter')) {
         addfilterModePanel();
       }
     });
@@ -520,100 +1186,31 @@ const observeAdditionalOptions = () => {
   }
 };
 
-// --- Wishlist page support ---
-
-// Extract the app ID from an href like /app/612470/Bio_Inc_Redemption
-const extractAppIdFromHref = (href) => {
-  const match = href && href.match(/\/app\/(\d+)/);
-  return match ? match[1] : null;
-};
-
-// Find all wishlist item containers on the page.
-// Wishlist items are div[role="button"][tabindex="0"] containers that
-// contain at least one anchor linking to /app/. This avoids relying on
-// obfuscated class names.
-const getWishlistItems = () => {
-  const candidates = document.querySelectorAll('div[role="button"][tabindex="0"]');
-  const items = [];
-  candidates.forEach((el) => {
-    const link = el.querySelector('a[href*="/app/"]');
-    if (link && extractAppIdFromHref(link.href)) {
-      items.push(el);
-    }
-  });
-  return items;
-};
-
-const markWishlistItem = (rowElement) => {
-  if (rowElement.dataset.slopChecked) return;
-  rowElement.dataset.slopChecked = "true";
-
-  const link = rowElement.querySelector('a[href*="/app/"]');
-  const appId = link ? extractAppIdFromHref(link.href) : null;
-  if (!appId) return;
-
-  // Store appId on the element so we can re-apply styles on mode change
-  rowElement.dataset.dsAppid = appId;
-
-  checkUrlForSlop(appId).then((isSlop) => {
-    if (isSlop) {
-      applySlopStyleWishlist(rowElement, currentMode);
-      flaggedCount++;
-      chrome.runtime.sendMessage({ type: 'updateBadge', count: flaggedCount });
-    }
-  });
-};
-
-const initWishlistObserver = () => {
-  console.log('%c[AI Disclosure]%c', 'color:#a30100; font-weight:bold;', '', 'Wishlist page detected, initializing observer.');
-
-  const observer = new IntersectionObserver(
-    (entries) => {
-      entries.forEach((entry) => {
-        if (entry.isIntersecting) {
-          markWishlistItem(entry.target);
-          observer.unobserve(entry.target);
-        }
-      });
-    },
-    { rootMargin: "200px" },
-  );
-
-  // Observe existing items
-  getWishlistItems().forEach((item) => observer.observe(item));
-
-  // Watch for dynamically added items (wishlist lazy-loads on scroll)
-  const listObserver = new MutationObserver(() => {
-    getWishlistItems().forEach((item) => {
-      if (!item.dataset.slopChecked) {
-        observer.observe(item);
-      }
+// --- Initialization ---
+chrome.storage.sync.get(
+  ['filterMode', 'ignoreLocalization', 'ignoreCode', 'ignoreConceptArt', 'ignoreMarketing'],
+  (res) => {
+    if (res.filterMode) currentMode = res.filterMode;
+    ['ignoreLocalization', 'ignoreCode', 'ignoreConceptArt', 'ignoreMarketing'].forEach((key) => {
+      if (res[key] !== undefined) filterSettings[key] = Boolean(res[key]);
     });
-  });
 
-  listObserver.observe(document.body, { childList: true, subtree: true });
-};
-
-// --- Main initialization ---
-
-chrome.storage.sync.get(['filterMode'], (res) => {
-  if (chrome.runtime.lastError) {
-    console.log('%c[AI Disclosure]%c', 'color:#a30100; font-weight:bold;', '', 'Error loading settings:', chrome.runtime.lastError.message);
-  }
-  if (res.filterMode) currentMode = res.filterMode;
-  console.log('%c[AI Disclosure]%c', 'color:#a30100; font-weight:bold;', '',"Slop mode set to:", currentMode);
-  console.log('%c[AI Disclosure]%c', 'color:#a30100; font-weight:bold;', '',"Current URL:", window.location.href);
-  if (window.location.href.includes("/app/")) {
-    handleStorePage();
-    const observer = new MutationObserver(() => handleStorePage());
-    if (document.body) {
-      observer.observe(document.body, { childList: true, subtree: true });
+    if (currentPageAppId) {
+      const handled = handleStorePage();
+      if (!handled && document.body) {
+        const observer = new MutationObserver((_, obs) => {
+          if (handleStorePage()) {
+            obs.disconnect();
+          }
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+      }
     }
-  } else if (window.location.href.includes("/wishlist/")) {
-    initWishlistObserver();
-  } else {
-    initSearchPageObserver();
-    observeAdditionalOptions();
-  }
-});
 
+    initUniversalStoreObserver();
+
+    if (window.location.href.includes('/search/')) {
+      observeAdditionalOptions();
+    }
+  }
+);

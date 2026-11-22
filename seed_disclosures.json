@@ -1,0 +1,502 @@
+[
+  {
+    "appId": "5015590",
+    "title": "App 5015590",
+    "disclosure": "A limited set of the art and code was generated with help from AI."
+  },
+  {
+    "appId": "3994120",
+    "title": "App 3994120",
+    "disclosure": "This game outputs the battle scenes and the strength of the monsters drawn by the player."
+  },
+  {
+    "appId": "4141770",
+    "title": "App 4141770",
+    "disclosure": "We use large language models and TTS services as the foundational language capability in role‑playing."
+  },
+  {
+    "appId": "1889620",
+    "title": "App 1889620",
+    "disclosure": "This game heavily uses AI to live-generate in-game content such as text, images, and sound effects. It also uses AI to make a variety of game mechanics decisions in real time."
+  },
+  {
+    "appId": "4266960",
+    "title": "App 4266960",
+    "disclosure": "Generative AI tools were used during the development of this game to assist with early concept art generation, texture optimization, and fine-tuning certain visual assets. All final in-game assets have been reviewed and refined by the development team."
+  },
+  {
+    "appId": "5178270",
+    "title": "App 5178270",
+    "disclosure": "Some pre-generated visual and audio assets in AI Startup Simulator were created with the assistance of generative AI tools during development. This includes in-game desktop wallpapers, images used in vision-related tasks, and instrumental music loops for minigames. These assets were reviewed, edited, and integrated by the development team before release. The game does not use live generative AI and does not generate content with AI during gameplay."
+  },
+  {
+    "appId": "3975820",
+    "title": "App 3975820",
+    "disclosure": "This game uses generative AI in two ways.\n\n\n\nDuring play: the character's replies are written by a language model and spoken by a speech model, and she can compose a short song when you ask for one. All of these models run on your own PC. The game does not connect to any outside AI service, and nothing you type or say is uploaded. Your conversations stay on your PC; we, the developers, never see, read or review them. Voices are synthetic; you can also create a voice from a recording you supply, which stays on your PC.\n\n\n\nMade ahead of time: a library of body gestures the character uses while talking, the loading-screen illustration and some store artwork were made with generative models. The trailers, clips and screenshots on this store page are in-game footage; the trailers use AI-generated music.\n\n\n\nReplies are generated live, so they can be wrong or out of character. You can report inappropriate AI output through the Steam Overlay."
+  },
+  {
+    "appId": "4738660",
+    "title": "App 4738660",
+    "disclosure": "[Pre-Generated AI Content]\nThis game makes extensive use of generative AI during development.\nAI tools were used to create or assist in producing the following assets:\n- Character illustrations and artwork\n- UI elements and visual effects\n- Sound and audio assets\n- Portions of the game code\n\nAll AI-generated content has been reviewed, curated, and edited\nby the developer to ensure quality and fit the game's design vision.\n\n[Live-Generated AI Content]\nThis game does not use any live-generated AI content during gameplay."
+  },
+  {
+    "appId": "4180890",
+    "title": "App 4180890",
+    "disclosure": "Some in-game assets, including character models and animations, were created with the assistance of AI tools during development. During play, the character's replies, voice and songs are generated live by AI: by models running on your PC by default, or by optional cloud models through our own service. Every player message and every reply passes a content filter."
+  },
+  {
+    "appId": "5097530",
+    "title": "App 5097530",
+    "disclosure": "Generative AI tools were used to assist with the creation of some 3D models and sound effects in this game.\n\r\n\n\r\nThe core elements of the game experience—including the scenario, game design, AI logic design and implementation, and parts balancing—were created and decided primarily by the developer.\n\r\n\n\r\nIn keeping with the game's concept of \"building logic for AI and having it battle,\" AI was also actively incorporated as a collaborative tool during development. Through ongoing dialogue and collaboration with AI, the developer was able to overcome some of the limitations of working alone and bring the game to completion."
+  },
+  {
+    "appId": "2795060",
+    "title": "App 2795060",
+    "disclosure": "This game uses AI to dynamically generate stories, illustrations, and voiceovers in response to player input. By default, Inference is done in the cloud, so the game runs fast and on any hardware. On-device inference is also supported.\n\r\n\n\r\nBy default, this game uses its own keys for cloud API calls. You also have the option to provide your own OpenAI, DreamStudio, OpenRouter, Fal, Groq, Fireworks, DeepInfra, or Replicate API keys.\n\r\n\n\r\nFor on-device inference, you can use any large language model in .gguf format; any Stable Diffusion or FLUX model in .safetensors, .ckpt, .diffusers, or .gguf formats; and any VITS or JETS models in .sentis or .onnx format."
+  },
+  {
+    "appId": "3750150",
+    "title": "App 3750150",
+    "disclosure": "The game leverages AI to produce in-game text on the fly (character inner monologues, dialogue, and scene descriptions) while also powering gameplay decision-making."
+  },
+  {
+    "appId": "4529510",
+    "title": "App 4529510",
+    "disclosure": "CielChan uses generative AI to create real-time conversation responses and voice synthesis. By default, a local AI model generates text responses, and bundled TTS engines convert those responses to speech directly on your device.\n\r\n\n\r\nAll core functionality is fully available offline, and no internet connection is required to use the application.\n\r\n\n\r\nOptional cloud-based AI and voice features are available for advanced users. When enabled, these features may send text or audio data to selected third-party providers using user-provided API keys.\n\r\n\n\r\nThe AI model, voice synthesis, and core systems are included in the download, allowing CielChan to function independently offline."
+  },
+  {
+    "appId": "4468180",
+    "title": "App 4468180",
+    "disclosure": "AI Society uses local generative AI (via Ollama) to power each character's behavior, dialogue, and decision-making. Based on the personality traits, hobbies, and description you set for each character, the AI determines their daily routines, job choices, relationships, and what they post on the in-game social media feed. All AI processing runs entirely on the player's machine — no data is sent to external servers."
+  },
+  {
+    "appId": "3496510",
+    "title": "App 3496510",
+    "disclosure": "AI Roommate uses advanced open-source AI models to power interactive NPCs that simulate natural and engaging conversations. Players can interact with their virtual roommate and neighbors in a dynamic way, exploring various topics and creating personalized experiences. The AI ensures a unique and immersive interaction in every session, enhancing the realism and replayability of the game."
+  },
+  {
+    "appId": "5109340",
+    "title": "App 5109340",
+    "disclosure": "1. This game uses AI to interact with the input text commands.\n\r\n2. Some of the art resources and music assets in the game are generated by AI during the development stage."
+  },
+  {
+    "appId": "4434840",
+    "title": "App 4434840",
+    "disclosure": "AI tools were used to assist in creating selected promotional store assets. These materials were later edited, refined, and finalized by human creators.\n\r\n\n\r\nIn-game videos used for simulating \"web cam\" or in house cameras are AI generated and than processed by code to get an ASCSII video. Translations of the game into all supported languages were produced with the assistance of large language models"
+  },
+  {
+    "appId": "4248930",
+    "title": "App 4248930",
+    "disclosure": "AI Cultivation Sandbox uses generative AI technology to assist in creating game content.\n\r\n\n\r\nThe AI systems in the game may generate or assist with generating character backgrounds, character dialogue, world events, story content, and visual assets.\n\r\n\n\r\nAI-generated content is guided by game systems and safety mechanisms to create a more dynamic and personalized cultivation world experience."
+  },
+  {
+    "appId": "4273730",
+    "title": "App 4273730",
+    "disclosure": "The content in the game is planned and designed manually, assisted by generative AI tools, and finally processed and completed by humans."
+  },
+  {
+    "appId": "2844700",
+    "title": "App 2844700",
+    "disclosure": "The AI generates responses to the player's interrogations."
+  },
+  {
+    "appId": "4539070",
+    "title": "App 4539070",
+    "disclosure": "This game uses generative AI to power character dialogue. No AI is used for art assets, music, or pre-generated content."
+  },
+  {
+    "appId": "5000280",
+    "title": "App 5000280",
+    "disclosure": "DUNGEON AI DRAGON uses generative AI in two ways. (1) Pre-generated content: some artwork (character portraits, item illustrations, decorative assets), quest text drafts and localizations were created with the assistance of AI tools and were reviewed and edited by our team before shipping. (2) Live-generated content: NPC dialogue, combat narration and dynamic quest flavor text are generated at runtime by large language models. Live generation is constrained by hand-authored character sheets, world lore and quest definitions. All game rules, stats, prices, rewards and progression are computed by a deterministic rule engine — AI output can never grant items, change prices or alter game state."
+  },
+  {
+    "appId": "3376430",
+    "title": "App 3376430",
+    "disclosure": "This is the first survival game where npc's think they are really alive. This game is connected to artificial intelligence and enables NPCs to answer any questions you may have within the framework of the game."
+  },
+  {
+    "appId": "5205430",
+    "title": "App 5205430",
+    "disclosure": "No art, audio, levels, or other authored game content was created using generative AI.\n\r\n\n\r\nHowever, a small local AI model runs during gameplay to interpret the player's commands and control the character accordingly. Rest assured, it's dumb as a rock. It won't take over the world or your computer. It can barely take over the test subject."
+  },
+  {
+    "appId": "3118900",
+    "title": "App 3118900",
+    "disclosure": "When user chat while playing a game, users will be communicating with the LLM model and make a voice Azure TTS.\n\r\n\n\r\nThe Character appearance is an image pre-generated using generative AI."
+  },
+  {
+    "appId": "4820860",
+    "title": "App 4820860",
+    "disclosure": "Regarding game content and store assets in general\n\r\n- We are using edited images generated by AI.\n\r\n- We are using proofread text generated by AI.\n\r\n- We are using edited code generated by AI.\n\r\n- We are using voice generated by AI.\n\r\n\n\r\n- There is no live-generated AI content."
+  },
+  {
+    "appId": "4364560",
+    "title": "App 4364560",
+    "disclosure": "This game uses generative AI to create unique detective cases and power in-game conversations. At the start of each session, the AI generates a new case (scenario details, suspects, motives, and leads). During gameplay, NPC dialogue is also generated in real time based on the case context and what you type.\n\r\n\n\r\nTo keep things safe and on-topic, the game includes guardrails that filter both player input and AI output. AI-generated text is used only for gameplay narrative and dialogue."
+  },
+  {
+    "appId": "5407890",
+    "title": "App 5407890",
+    "disclosure": "Ashley's conversations are generated live by an AI language model. You choose the\n\nprovider when you first set her up (OpenRouter, xAI, a local model on your own PC,\n\nor Player2), and her replies are written in real time from what you say. Ashley's\n\ncharacter art was created with the help of AI tools."
+  },
+  {
+    "appId": "5340160",
+    "title": "App 5340160",
+    "disclosure": "AI tools were used during development to assist with the creation and refinement of visual assets, marketing materials, text, narrative content, and localization. The game does not generate AI content live during gameplay."
+  },
+  {
+    "appId": "2588860",
+    "title": "App 2588860",
+    "disclosure": "This game use text-Generated AI.\n\r\nPlayer can talk character with use microphone."
+  },
+  {
+    "appId": "4652030",
+    "title": "App 4652030",
+    "disclosure": "Some visual assets (card art and character portraits) generated using Google Gemini image models. Some SFX partially generated via ElevenLabs where Unity Assets were not available. All licensed for commercial use. Game design, code, and text content are original."
+  },
+  {
+    "appId": "4187340",
+    "title": "App 4187340",
+    "disclosure": "Artificial intelligence was used in the game to process different processes for each player. Each player’s choices will shape how the game unfolds. In other words, the game’s Artificial Intelligence will produce different results each time."
+  },
+  {
+    "appId": "5335510",
+    "title": "App 5335510",
+    "disclosure": "Generative AI was used to assist with translating in-game text into supported languages."
+  },
+  {
+    "appId": "5185890",
+    "title": "App 5185890",
+    "disclosure": "Zombies Aren't Real was developed with the help of AI coding tools. Parts of the game’s in-game text, translations and user interface were created with AI assistance."
+  },
+  {
+    "appId": "5378110",
+    "title": "App 5378110",
+    "disclosure": "Some sound effects were generated with AI tools (ElevenLabs), and the songs on the in-game radio were generated with AI (Suno) under commercial licenses, then selected, edited and mixed by the developer. The game shows a notice about this when you turn the radio on, and the radio is optional. AI coding assistants were also used."
+  },
+  {
+    "appId": "4915700",
+    "title": "App 4915700",
+    "disclosure": "Generative AI was used during development to create the soundtrack, some prerecorded voices, sound effects, ambient audio and event illustrations, and to create or refine selected 3D models. AI-assisted tools were also used to translate in-game text. All AI-generated content was reviewed and edited by the developer before inclusion. The game does not generate content with AI during gameplay."
+  },
+  {
+    "appId": "4459590",
+    "title": "App 4459590",
+    "disclosure": "various visual assets and promotional materials for Slotbound were created with the assistance of generative AI tools.\n\r\nAll AI-generated content was reviewed, refined, and integrated by the developer to ensure consistency with the game's artistic direction and quality standards."
+  },
+  {
+    "appId": "3393110",
+    "title": "App 3393110",
+    "disclosure": "Some in-game assets were created with the assistance of AI tools.\n\r\nArcana card designs and some icons use AI-generated assets."
+  },
+  {
+    "appId": "5196330",
+    "title": "App 5196330",
+    "disclosure": "In-game art and music are not AI-generated. The music is a licensed\n\nsoundtrack by a human composer.\n\n\n\nAI-generated content appears in the following places:\n\n- Localization: 21 languages were translated with AI assistance and then reviewed.\n\n- Trailers: the current trailers were made during the demo period and\n\n  still contain AI-generated images and AI-generated music that are no\n\n  longer in the game. New trailers are in production and will replace them.\n\n\n\nMore details: https://steamcommunity.com/app/5196330/discussions/0/571554017506762270/"
+  },
+  {
+    "appId": "4080220",
+    "title": "App 4080220",
+    "disclosure": "Generative AI may have been used in creating pre-rendered or live-generated content for this game.  All such content is the result of a human-led artistic and creative process."
+  },
+  {
+    "appId": "4954910",
+    "title": "App 4954910",
+    "disclosure": "AI powers real-time dialogue and responses from fictional in-game characters, allowing them to react dynamically to player conversations and actions."
+  },
+  {
+    "appId": "4025700",
+    "title": "App 4025700",
+    "disclosure": "AI-Generated Content Disclosure\n\r\nAI is used in the puzzle gameplay to reinterpret and redraw in-game snapshot images.\n\r\nAI is used in in-game chat to help players understand different languages."
+  },
+  {
+    "appId": "5362020",
+    "title": "App 5362020",
+    "disclosure": "Generative AI tools were used during development to assist with creating some store and marketing materials. The game itself does not use generative AI during gameplay."
+  },
+  {
+    "appId": "4986050",
+    "title": "App 4986050",
+    "disclosure": "Generative AI tools were used during the development of this game, including programming assistance, visual asset creation, and the development of certain in-game content.\n\n\n\nAll AI-assisted content was reviewed, edited, and integrated by the developer.\n\n\n\nThe game does not use real-time generative AI during gameplay."
+  },
+  {
+    "appId": "2448570",
+    "title": "App 2448570",
+    "disclosure": "AI was used to upscale the resolution and framerate of the master full-motion video source material, enhancing the full-motion cinematics for an optional enhanced viewing experience."
+  },
+  {
+    "appId": "4197610",
+    "title": "App 4197610",
+    "disclosure": "The four assets in this work—one UI component and three landscape paintings used as wall decorations (frames not included)—were produced using additional AI for refinement. None of them were created by AI from the ground up.\n\r\n\n\r\nAI helped with grammatical corrections for in-game text, which were then carefully reviewed and adjusted by hand.\n\r\n\n\r\nWe only consider AI to be a supportive tool. Every detail is meticulously crafted with human intent, as our creative process is still firmly anchored in manual craftsmanship."
+  },
+  {
+    "appId": "940230",
+    "title": "App 940230",
+    "disclosure": "Yes. Geoplanetical is a solo project, just me. I use generative AI in a few places. It helps me translate the game and this Steam page into other languages, though I check every translation myself. It also helps me research and format the game's real world starting data, which comes from public sources like the World Bank, the IMF and Natural Earth, and I verify all of that data myself too. The voices, character portraits, around 60,000 of them, are generated with AI. The promotional images and text on this store page were made with AI as well. That's it. Nothing else in the game uses generative AI, and none of it runs while you play. If you want to know where the rest of the game's content comes from, like the real world datasets, the hand made assets and the Creative Commons icons, it's all documented in the About section inside the game."
+  },
+  {
+    "appId": "5053820",
+    "title": "App 5053820",
+    "disclosure": "Some of the game's 2D illustration assets and sound reference material were\n\r\ncreated with the help of AI tools during development, then reviewed,\n\r\nedited and validated by hand before shipping.\n\r\n\n\r\nNo content is generated at runtime."
+  },
+  {
+    "appId": "5020310",
+    "title": "App 5020310",
+    "disclosure": "Some of the artwork in this game was made with AI image generators and edited by hand afterwards. This covers the two player characters, the logo, the menu icons and the curtain texture. The English interface texts were written with the help of a language model and reviewed afterwards. The German texts are written by hand.\n\r\n\n\r\nThe bundled Pack Creator uses a speech recognition model to find the spoken parts of a video you supply yourself and turn them into the lines you read out. An AI noise filter for your microphone recordings and AI-based separation of speech and background audio work the same way. All of this runs locally on your own machine and never sends data to an external service. These models only process material you provide yourself, they do not invent content of their own, and the result stays inside your own lobby."
+  },
+  {
+    "appId": "5212940",
+    "title": "App 5212940",
+    "disclosure": "AI was used to create promotional materials for the game's Steam page."
+  },
+  {
+    "appId": "3558670",
+    "title": "App 3558670",
+    "disclosure": "AI-assisted tools were used during development to support some early exploration and temporary development content. Any AI-assisted assets were either replaced or refined by humans in order to maintain the creative and artistic vision of the development team."
+  },
+  {
+    "appId": "4128580",
+    "title": "App 4128580",
+    "disclosure": "The developer's description of how AI-generated content is used in the game is as follows:\n\r\n\n\r\nCertain artistic assets in this work were produced using Stable Diffusion, including but not limited to: scene images, loading images, and select item icons."
+  },
+  {
+    "appId": "5027520",
+    "title": "App 5027520",
+    "disclosure": "AI tools were used to assist with some of the game’s translations and in the creation of two in-game textures. These textures were subsequently edited, refined, and carefully reviewed by a human before being included in the final game.\n\r\n\n\r\nWe strictly rely on human creativity and craftsmanship throughout the game’s development."
+  },
+  {
+    "appId": "5211290",
+    "title": "App 5211290",
+    "disclosure": "We use AI tools as part of our development pipeline: some images were generated with AI, and AI-assisted tools support parts of the production process. Everything produced this way is reviewed, edited and integrated by hand - the design, gameplay systems and final content are our own work."
+  },
+  {
+    "appId": "2174510",
+    "title": "App 2174510",
+    "disclosure": "Translations were made on the game’s own translation website, which offers optional AI-generated suggestions that can be turned off. Every translation that ships with the game was either written from scratch by a human translator, or is an AI suggestion that a human translator edited or approved. The developer then approved each translation under a four-eyes principle.\n\n\n\nNo other content in the game or on the store page was made by generative AI. The AI drivers use traditional machine learning, trained on the developer’s own machines using only the game itself as their environment and data."
+  },
+  {
+    "appId": "667970",
+    "title": "App 667970",
+    "disclosure": "Pre-rendered AI generated voices may be used for NPCs in a few missions."
+  },
+  {
+    "appId": "5221510",
+    "title": "App 5221510",
+    "disclosure": "We use generative AI across all disciplines of game development most often with heavy amounts of human editing. That involves audio and visual art, our logo, and localization. We use it as a productivity tool so we can achieve a higher level of quality, faster, than we would have been able to."
+  },
+  {
+    "appId": "4209920",
+    "title": "App 4209920",
+    "disclosure": "The game uses AI technology to generate videos, scenes, sound effects, community items and other assets."
+  },
+  {
+    "appId": "4883590",
+    "title": "App 4883590",
+    "disclosure": "NASCAR 26 used AI to generate certain VO lines and other presentation elements throughout the UI."
+  },
+  {
+    "appId": "4800590",
+    "title": "App 4800590",
+    "disclosure": "All 3D models, music, and UI icons were created by humans. Generative AI was used for some in-game textures, localization, and translation."
+  },
+  {
+    "appId": "2366590",
+    "title": "App 2366590",
+    "disclosure": "The main Campaign story, characters, and dialogue were written by a team of human writers and voiced in English by human actors. AI tools were used to localize text and voice overs.\n\n\n\nThe optional Free Ride mode includes AI-generated passenger missions and localized dialogue. Free Ride mode is separate from the main Campaign and can be skipped by players who prefer to experience only human-written narrative content.\n\n\n\nBoth game modes include radio stations featuring a mix of human-made music and AI-generated music. Stations containing AI-generated music are clearly labeled as such in the game."
+  },
+  {
+    "appId": "1465460",
+    "title": "App 1465460",
+    "disclosure": "- Some artworks have been made with the help of the Midjourney AI tool. \n\r\n- The Map Data in some countries has been generated with the help of AI technology to recognize satellite images."
+  },
+  {
+    "appId": "5130480",
+    "title": "App 5130480",
+    "disclosure": "Some of the game model mesh are crafted with AI Support, we have 1 artist creating toy design and 1 model artist to craft model of our own design. AI is used to help edit some of the model."
+  },
+  {
+    "appId": "5489300",
+    "title": "App 5489300",
+    "disclosure": "AI is used for in-game text and translations.\n\nAI is not used for images or music."
+  },
+  {
+    "appId": "281990",
+    "title": "App 281990",
+    "disclosure": "We employ generative AI technologies during the creation of some assets. Typically this involves the ideation of content and visual reference material. These elements represent a minor component of the overall development. AI has been used to generate voices for an AI antagonist and a player advisor."
+  },
+  {
+    "appId": "4551060",
+    "title": "App 4551060",
+    "disclosure": "Salt and Soil uses generative AI during gameplay to create some Annual Family Council narrative text and structured choice outcomes based on the current campaign state. Generated council content is constrained by the game’s historical setting, family data, localization rules, and gameplay schema, then validated before it is shown to the player."
+  },
+  {
+    "appId": "4128400",
+    "title": "App 4128400",
+    "disclosure": "To achieve more flexible play-by-play commentary, this game has an AI-generated voice feature. \n\r\n*Only available in Japanese commentary."
+  },
+  {
+    "appId": "2456740",
+    "title": "App 2456740",
+    "disclosure": "Users can directly generate AI-powered content, including textures, image-based 3D objects, and video-based motion. These are used for item customization (clothing and accessory textures, interior and accessory objects) and character animation in Photo Mode. Additionally, a small language model (sLM) enables Zoi characters to exhibit autonomous behaviors and thought processes.\n\n\n\nSeparately, the game provides a default list of AI-generated music tracks, which players can freely select and use during gameplay. Some content includes AI-generated images.\n\nIn particular, AI-generated images were used during the initial design stage, and the resulting content went through the development team’s review and manual refinement before being finalized.\n\n\n\nVarious safeguards, including content filtering and text screening algorithms, are implemented during content generation to prevent copyright infringement, NSFW content, ethical concerns, and misuse or illegal activities."
+  },
+  {
+    "appId": "5475960",
+    "title": "App 5475960",
+    "disclosure": "I built Incremental Traffic together with an AI coding assistant. That includes the code that draws everything you see.\n\nMost texts are at least edited by AI too and the translations are done by AI. There are no AI-painted images, textures, sounds or music in the game."
+  },
+  {
+    "appId": "4895540",
+    "title": "App 4895540",
+    "disclosure": "This game is designed by ChatGPT, implemented by Codex, and directed by Kevin Du."
+  },
+  {
+    "appId": "2810720",
+    "title": "App 2810720",
+    "disclosure": "GPT technology is used in the development of Hysteria in Howlsbend to power conversations between players and the cast of characters. The technology generates responses based on the input provided by the player, and a tailored AI context carefully crafted by the team. This enables the characters to generate natural dialogues, and evolve over the game experience by having emotional curves."
+  },
+  {
+    "appId": "3600510",
+    "title": "App 3600510",
+    "disclosure": "This game uses AI-powered NPCs that respond to the player in real time using the OpenAI ChatGPT API.\n\r\nEach NPC has a unique persona and provides dynamic, one-sentence dialogue based on the player's questions, enhancing immersion and interactivity in the investigation."
+  },
+  {
+    "appId": "3393170",
+    "title": "App 3393170",
+    "disclosure": "The English version of the game was translated using ChatGPT."
+  },
+  {
+    "appId": "5116880",
+    "title": "App 5116880",
+    "disclosure": "Character/background art: ChatGPT (image generation)\n\r\nMusic: SOUNDRAW (AI music generation)\n\r\nTranslations other than Japanese (12 languages): Machine-translated via ChatGPT\n\r\nNo AI runs at runtime — everything is pre-generated and bundled"
+  },
+  {
+    "appId": "2376080",
+    "title": "App 2376080",
+    "disclosure": "We use AI to generate dialogs in game, all characters have their own personality thanks to AI."
+  },
+  {
+    "appId": "3146050",
+    "title": "App 3146050",
+    "disclosure": "A dish image and description will be generated based on the ingredients you cut with the sword."
+  },
+  {
+    "appId": "3661700",
+    "title": "App 3661700",
+    "disclosure": "Our game used artificial intelligence to create some images, parts of the music, and for translation into certain languages."
+  },
+  {
+    "appId": "4146470",
+    "title": "App 4146470",
+    "disclosure": "AI art is used for... AI art or robot propaganda bc game is \n\r\ntakes place at world war 4 where the rest of humanity \n\r\nfight against robots"
+  },
+  {
+    "appId": "3072560",
+    "title": "App 3072560",
+    "disclosure": "Leaf, Bee, Clouds and Ground were generated by ChatGPT 3.5."
+  },
+  {
+    "appId": "5254900",
+    "title": "App 5254900",
+    "disclosure": "Generative AI was used to create some of the game's 3D models, images, announcer voice lines, and sound effects.\n\n\n\nThe 3D models and textures for the player character, soldiers, and ghosts at the hub were created with Tripo AI using source material including original artwork prepared by the developer. For the gym ghost, a model by フリック was used with permission. The developer used ChatGPT to adapt its design into a ghost and then used Tripo AI to create the 3D model.\n\n\n\nOpenAI image generation tools, including ChatGPT and DALL·E, were used to create UI icons, card illustrations, backgrounds (sky and grass), some textures, character portraits and expression variants for dialogue and cut-ins, and key art for the store page.\n\n\n\nAnnouncer voice lines, including match start calls and countdowns, were created with ACE Studio for Japanese and ElevenLabs for English and Korean. Some sound effects were also created using ACE Studio's generative features.\n\n\n\nThe developer reviewed the generated assets and adjusted them as needed before use. These assets were created during development. The game does not use generative AI to create new content during gameplay."
+  },
+  {
+    "appId": "2613830",
+    "title": "App 2613830",
+    "disclosure": "AI helped us create our new logo, and we used Claude Code to help us with... the code, bro. Otherwise, the game's hand-made! \n\r\n\n\r\nOur world is entering a troubling and hilarious time, and so critical reflection is important - but we are not categorically anti-AI. After all, you can't criticize something you don't understand, can you?"
+  },
+  {
+    "appId": "4342230",
+    "title": "App 4342230",
+    "disclosure": "The application uses local Large Language Models (LLM) to generate conversational text and Text-to-Speech (TTS) engines to generate voice in real-time. All AI processing happens locally on the user's hardware."
+  },
+  {
+    "appId": "4086260",
+    "title": "App 4086260",
+    "disclosure": "The game was conceived with the help of ChatGPT, partially built with Perplexity, and programmed using Claude Sonnet 4 and Gemini Pro.\n\r\nIn short, they all made it together — from the story and challenges to the localization and everything in between.\n\r\nI personally tested it thoroughly (and trust me, it’s super hard!)."
+  },
+  {
+    "appId": "5142970",
+    "title": "App 5142970",
+    "disclosure": "Placeholder art assets for the demo are ai-generated, but will be replaced with human art at the earliest reasonable opportunity."
+  },
+  {
+    "appId": "3692160",
+    "title": "App 3692160",
+    "disclosure": "Meshy.ai 3d models\n\r\nChatGPT Art for Textures\n\r\nVeed.io for Ad and In game voices (Female / Dog)\n\r\n11Labs Sound Effects"
+  },
+  {
+    "appId": "3093690",
+    "title": "App 3093690",
+    "disclosure": "The application is a gamified AI chatbot with numerous user experiences, including Quizes. The AI is used to generate the AI personality and voice as the characters are traditional 3d."
+  },
+  {
+    "appId": "5258950",
+    "title": "App 5258950",
+    "disclosure": "AI was used in the generation of the sprites and backgrounds for this visual novel. Essentially, I used ChatGPT to create line art for the characters. I then filled them in with color. Backgrounds are mostly AI generated with a few adjustments. AI also assisted with some of the coding, though the vast majority of it was done by me. All music and script writing was created without AI assistance."
+  },
+  {
+    "appId": "3380580",
+    "title": "App 3380580",
+    "disclosure": "I believe the AI can create the best experience for the player, specificaly for this kind of game where the conversation is central. In this game AI is used to generate text responses to make the character dynamically respond like humans. This differs from previously available technologies since all responses are tailored to this player input."
+  },
+  {
+    "appId": "5298350",
+    "title": "App 5298350",
+    "disclosure": "AI tools were used during game development mainly to assist in 3D asset creation and coding. Please see the production disclosure in the description for an extended discussion about the tools used to produce this game."
+  },
+  {
+    "appId": "5269220",
+    "title": "App 5269220",
+    "disclosure": "Generative AI was used during development to assist with programming and the creation of some visual assets. AI-generated and AI-assisted content may be included in the final game."
+  },
+  {
+    "appId": "4953630",
+    "title": "App 4953630",
+    "disclosure": "Some graphical assets (capsule images, etc.) and music tracks \n\r\nwere created using AI generation tools. \n\r\nNo AI generates content in real time during gameplay. \n\r\nAll AI-generated materials were reviewed and selected by a human."
+  },
+  {
+    "appId": "2286690",
+    "title": "App 2286690",
+    "disclosure": "Both original games, Pick Up The Waste (Classic) and Pick Up The Waste: Fan Art, were designed and programmed by Christophe Auneau (RIVARDUS). ChatGPT assisted him in bringing the two games together in one application and updating their PC presentation for a horizontal layout.\n\n\n\nThis game uses pre-generated AI-assisted content: environmental backgrounds, promotional illustrations, refinements to some Classic and Mimi artwork, music arrangements and extensions, and localization assistance. The original music compositions and the developer's original drawings were created by Christophe Auneau (RIVARDUS). Fan Art's waste-object drawings were created by fans and children at geek festivals and an Aix-les-Bains leisure centre; these drawings are preserved without visual retouching. AI assistance was used during production. The game does not generate AI content while you play."
+  },
+  {
+    "appId": "3247860",
+    "title": "App 3247860",
+    "disclosure": "The user's voice input will be converted to text, then sent to open ai's LLM along with parameters and characteristics. A response will be given and then sent to elevenlabs to be converted into voice to give a life-like response to the player."
+  },
+  {
+    "appId": "3412990",
+    "title": "App 3412990",
+    "disclosure": "This match3 game is built with AI:\n\r\n- Game logic generated from Cline (VSCode plugin) + Claude AI  & Unity Muse\n\r\n- Graphics from Midjourney processed with Rembg\n\r\n- Music from Udio\n\r\n- Sound effects from https://www.optimizerai.xyz/ and https://freesound.org/ (non-AI)\n\r\n- Font suggestions from a mixture of experts with ChatGPT's and Claude's suggestions winning out so far.\n\r\n- Special effects from Unity Particle Pack (non-AI)\n\r\n\n\r\nThank you to all the awesome providers above!  See source code at: https://github.com/chrisaharden/SpAIceRocks"
+  },
+  {
+    "appId": "5116270",
+    "title": "App 5116270",
+    "disclosure": "This is a project that uses AI to make an old RTS program run in a web browser.\n\r\nThe images were generated using GPT image generation."
+  },
+  {
+    "appId": "3606680",
+    "title": "App 3606680",
+    "disclosure": "Some illustrations such as backgrounds or monsters were created using AI-based tools during development, and were modified before use.\n\r\nNo live generation or AI-based interaction is included in the gameplay itself."
+  },
+  {
+    "appId": "5467910",
+    "title": "App 5467910",
+    "disclosure": "Hi, I'm the solo developer behind Back Road Stories, and I want to be upfront about how it was made.\n\n\n\nI used generative AI tools as a starting point for some of the content. The painted scene art, the character portraits, the key art and the icons were generated with ChatGPT from my written prompts, and the colour icons of the skill tree were generated with another AI image tool (Gemini). The music in my trailers was generated with an AI music tool. I also used AI coding assistants to help write code, and AI help to draft some of the in-game text. Nothing went in straight from a generator. I read and looked at everything, threw away far more than I kept, and edited, cut out and hand-processed what stayed, and I test the game by playing it over and over.\n\n\n\nThe sounds and ambience in the game are made by the game's own code, not by AI.\n\n\n\nNo AI generates anything while you play. What you see on your screen is what I chose to put there.\n\n\n\nThank you for giving a small, one-person game a chance."
+  },
+  {
+    "appId": "4309150",
+    "title": "App 4309150",
+    "disclosure": "AI tools were used during game development. Please see the production disclosure in the description for an extended discussion about the tools used to produce this game."
+  },
+  {
+    "appId": "4846800",
+    "title": "App 4846800",
+    "disclosure": "AI images by Midjourney，Chatgpt\n\r\nAI Music by SUNO，\n\r\nAI Voice by TTSMaker\n\r\nAI Video by Vidu\n\r\nAI translation by Chatgpt"
+  },
+  {
+    "appId": "4218510",
+    "title": "App 4218510",
+    "disclosure": "AI Was used to assist in coding, and the production of client and website graphics, music and SFX."
+  }
+]
