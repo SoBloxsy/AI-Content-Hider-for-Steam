@@ -27,7 +27,7 @@ const getCurrentPageAppId = () => {
 const currentPageAppId = getCurrentPageAppId();
 
 // --- Request Queue & Concurrency Limiter ---
-const MAX_CONCURRENT_FETCHES = 5;
+const MAX_CONCURRENT_FETCHES = 10;
 let activeFetches = 0;
 const fetchQueue = [];
 
@@ -242,9 +242,20 @@ const extractDisclosureFromStream = async (response) => {
           } catch (_) {}
           break;
         }
+      } else if (
+        html.includes('id="game_area_sys_req"') ||
+        html.includes('class="game_area_sys_req"') ||
+        html.includes('id="game_area_legal"')
+      ) {
+        // System requirements strictly follow content descriptors in Steam layout.
+        // If sys_req is reached without finding descriptors, the game has none.
+        try {
+          await reader.cancel();
+        } catch (_) {}
+        break;
       }
 
-      if (html.length > 400000) {
+      if (html.length > 250000) {
         try {
           await reader.cancel();
         } catch (_) {}
