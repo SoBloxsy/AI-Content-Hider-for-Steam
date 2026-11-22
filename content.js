@@ -442,16 +442,30 @@ const applyAccessibleSlopStyle = (el, mode, data) => {
     el.querySelector('.hero_capsule') ||
     el.querySelector('.sale_capsule_image') ||
     el.querySelector('[class*="SaleCapsuleImage"]') ||
-    el.querySelector('.cluster_capsule_image');
+    el.querySelector('.cluster_capsule_image') ||
+    el.querySelector('.iogiG-p5PHg-, div[style*="background-image"], [class*="EventBanner"], [class*="CapsuleImage"]');
 
-  // If inside calendar or custom tile, locate image's immediate parent
+  // If inside calendar or custom tile, locate image's immediate parent (excluding mini avatars/icons)
   if (!imgCtn) {
-    const imgEl = el.querySelector('img');
+    const imgEl = Array.from(el.querySelectorAll('img')).find(img => {
+      const parentText = img.parentElement ? img.parentElement.innerText.trim() : '';
+      const isAvatarOrIcon =
+        img.classList.contains('go8QhZVoiDg-') ||
+        img.className.toLowerCase().includes('avatar') ||
+        img.className.toLowerCase().includes('icon') ||
+        parentText.length > 0;
+      return !isAvatarOrIcon;
+    });
     if (imgEl && imgEl.parentElement && imgEl.parentElement !== el) {
       imgCtn = imgEl.parentElement;
     } else if (imgEl) {
       imgCtn = el;
     }
+  }
+
+  // Guard: if imgCtn contains text, it is a header/details container, not a capsule graphic
+  if (imgCtn && imgCtn.innerText.trim().length > 0) {
+    imgCtn = null;
   }
 
   if (mode === 'highlight') {
@@ -530,6 +544,9 @@ const applyAccessibleSlopStyle = (el, mode, data) => {
   }
 
   // --- Badge Tag ---
+  const newsHeaderPill = el.querySelector('[class*="Zlty4OIYdk8-"], [class*="cJRhUD4vyks-"]');
+  const newsAppTitle = newsHeaderPill ? newsHeaderPill.querySelector('[class*="C2L2kTp8KYY-"]') : el.querySelector('[class*="C2L2kTp8KYY-"]');
+
   const titleEl =
     el.querySelector('.app_name div') ||
     el.querySelector('.app_name') ||
@@ -542,10 +559,12 @@ const applyAccessibleSlopStyle = (el, mode, data) => {
     el.querySelector('.tab_item_title') ||
     el.querySelector('.match_name') ||
     el.querySelector('.name') ||
+    newsAppTitle ||
     (el.tagName === 'TR' ? el.querySelector('td:nth-child(2) a[href*="/app/"], td a[href*="/app/"]') : null);
 
   const existingTitleBadge = titleEl ? titleEl.querySelector('.slop-badge') : null;
-  let badge = existingTitleBadge || existingBadge;
+  const existingNewsBadge = newsHeaderPill ? newsHeaderPill.querySelector('.slop-badge') : null;
+  let badge = existingNewsBadge || existingTitleBadge || existingBadge;
 
   if (!badge) {
     badge = document.createElement('span');
@@ -553,7 +572,18 @@ const applyAccessibleSlopStyle = (el, mode, data) => {
     badge.setAttribute('role', 'status');
     badge.setAttribute('aria-label', `Notice: ${badgeText}`);
 
-    if (titleEl) {
+    if (newsHeaderPill && newsAppTitle) {
+      badge.style.display = 'inline-flex';
+      badge.style.alignItems = 'center';
+      badge.style.fontSize = '11px';
+      badge.style.fontWeight = 'bold';
+      badge.style.padding = '1px 6px';
+      badge.style.marginRight = '8px';
+      badge.style.borderRadius = '3px';
+      badge.style.flexShrink = '0';
+      badge.style.lineHeight = '14px';
+      newsHeaderPill.insertBefore(badge, newsAppTitle);
+    } else if (titleEl) {
       badge.style.display = 'inline-block';
       badge.style.fontSize = '11px';
       badge.style.fontWeight = 'bold';
@@ -580,6 +610,22 @@ const applyAccessibleSlopStyle = (el, mode, data) => {
       if (computedPos === 'static') containerForBadge.style.position = 'relative';
       containerForBadge.appendChild(badge);
     }
+  } else if (newsHeaderPill && newsAppTitle && badge.parentElement !== newsHeaderPill) {
+    badge.style.position = '';
+    badge.style.bottom = '';
+    badge.style.left = '';
+    badge.style.zIndex = '';
+    badge.style.boxShadow = '';
+    badge.style.display = 'inline-flex';
+    badge.style.alignItems = 'center';
+    badge.style.fontSize = '11px';
+    badge.style.fontWeight = 'bold';
+    badge.style.padding = '1px 6px';
+    badge.style.marginRight = '8px';
+    badge.style.borderRadius = '3px';
+    badge.style.flexShrink = '0';
+    badge.style.lineHeight = '14px';
+    newsHeaderPill.insertBefore(badge, newsAppTitle);
   }
 
   badge.style.display = '';
