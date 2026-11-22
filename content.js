@@ -421,6 +421,8 @@ const applyAccessibleSlopStyle = (el, mode, data) => {
   // Find exact image target: avoid putting relative positioning on entire calendar cells
   let imgCtn =
     el.querySelector('.capsule_image_ctn') ||
+    el.querySelector('.tab_item_header') ||
+    el.querySelector('.tab_item_cap') ||
     el.querySelector('[class*="CapsuleImageCtn"]') ||
     el.querySelector('.CapsuleImageCtn') ||
     el.querySelector('.main_capsule') ||
@@ -444,10 +446,11 @@ const applyAccessibleSlopStyle = (el, mode, data) => {
   if (mode === 'highlight') {
     el.classList.add('slop-highlighted');
 
-    // 1. Search result row or text tab: apply background wash
+    // 1. Search result row or text tab: apply background wash and outline
     if (el.classList.contains('search_result_row') || el.classList.contains('tab_item') || el.classList.contains('tab_row_item')) {
       el.style.outline = `2px solid ${highlightColor}`;
       el.style.outlineOffset = '-2px';
+      el.style.borderRadius = '4px';
       el.style.setProperty(
         'background',
         isToleratedOnly ? 'rgba(0, 30, 60, 0.85)' : 'rgba(60, 0, 0, 0.85)',
@@ -456,15 +459,15 @@ const applyAccessibleSlopStyle = (el, mode, data) => {
     } else if (
       el.matches('.home_content.single, .home_content_single_ctn') ||
       el.matches(
-        '[class*="StoreSaleWidgetOuterContainer"], .StoreSaleWidgetOuterContainer, [class*="capsule_index_"], #StoreTemplate [role="button"], tr'
+        '[class*="StoreSaleWidgetOuterContainer"], .StoreSaleWidgetOuterContainer, [class*="capsule_index_"], #StoreTemplate [role="button"], tr, .store_main_capsule'
       )
     ) {
-      // 2. Recommendation block, React sale card, modern wishlist row, or chart row: outline entire container
+      // 2. Recommendation block, React sale card, modern wishlist row, chart row, or hero capsule: outline entire container
       el.style.outline = `2px solid ${highlightColor}`;
       el.style.outlineOffset = '-2px';
       el.style.borderRadius = '4px';
 
-      // Only apply dark background wash to recommendation banners, wishlist rows, and chart rows, not React sale widgets
+      // Only apply dark background wash to recommendation banners, wishlist rows, chart rows, and hero cards, not React sale widgets
       if (!el.matches('[class*="StoreSaleWidgetOuterContainer"], .StoreSaleWidgetOuterContainer, [class*="capsule_index_"]')) {
         el.style.setProperty(
           'background',
@@ -472,64 +475,38 @@ const applyAccessibleSlopStyle = (el, mode, data) => {
           'important'
         );
       }
-
-      if (imgCtn) {
-        const computedPos = window.getComputedStyle(imgCtn).position;
-        if (computedPos === 'static') imgCtn.style.position = 'relative';
-        imgCtn.style.overflow = 'hidden';
-
-        let tint = imgCtn.querySelector('.slop-tint-overlay');
-        if (!tint) {
-          tint = document.createElement('div');
-          tint.className = 'slop-tint-overlay';
-          Object.assign(tint.style, {
-            position: 'absolute',
-            top: '0',
-            left: '0',
-            width: '100%',
-            height: '100%',
-            pointerEvents: 'none',
-            zIndex: '5',
-            borderRadius: 'inherit',
-            transition: 'background 0.2s ease',
-          });
-          imgCtn.appendChild(tint);
-        }
-        tint.style.display = 'block';
-        tint.style.background = overlayHue;
-        tint.style.boxShadow = 'none';
-      }
     } else {
-      // 3. Card / Capsule: outline and red tint overlay strictly confined to image
+      // 3. Generic Card / Capsule: outline strictly confined to container
       el.style.outline = `2px solid ${highlightColor}`;
       el.style.outlineOffset = '-2px';
+    }
 
-      if (imgCtn) {
-        const computedPos = window.getComputedStyle(imgCtn).position;
-        if (computedPos === 'static') imgCtn.style.position = 'relative';
-        imgCtn.style.overflow = 'hidden';
+    // Universal capsule thumbnail tint overlay for all elements with an image container
+    if (imgCtn) {
+      const computedPos = window.getComputedStyle(imgCtn).position;
+      if (computedPos === 'static') imgCtn.style.position = 'relative';
+      imgCtn.style.overflow = 'hidden';
 
-        let tint = imgCtn.querySelector('.slop-tint-overlay');
-        if (!tint) {
-          tint = document.createElement('div');
-          tint.className = 'slop-tint-overlay';
-          Object.assign(tint.style, {
-            position: 'absolute',
-            top: '0',
-            left: '0',
-            width: '100%',
-            height: '100%',
-            pointerEvents: 'none',
-            zIndex: '5',
-            borderRadius: 'inherit',
-            transition: 'background 0.2s ease',
-          });
-          imgCtn.appendChild(tint);
-        }
-        tint.style.display = 'block';
-        tint.style.background = overlayHue;
-        tint.style.boxShadow = 'none';
+      let tint = imgCtn.querySelector('.slop-tint-overlay');
+      if (!tint) {
+        tint = document.createElement('div');
+        tint.className = 'slop-tint-overlay';
+        Object.assign(tint.style, {
+          position: 'absolute',
+          top: '0',
+          left: '0',
+          width: '100%',
+          height: '100%',
+          pointerEvents: 'none',
+          zIndex: '5',
+          borderRadius: 'inherit',
+          transition: 'background 0.2s ease',
+        });
+        imgCtn.appendChild(tint);
       }
+      tint.style.display = 'block';
+      tint.style.background = overlayHue;
+      tint.style.boxShadow = 'none';
     }
   } else {
     // Mode is "text" (clean, no background wash or red tint)
@@ -543,6 +520,8 @@ const applyAccessibleSlopStyle = (el, mode, data) => {
 
   // --- Badge Tag ---
   const titleEl =
+    el.querySelector('.app_name div') ||
+    el.querySelector('.app_name') ||
     el.querySelector('.single_title') ||
     el.querySelector('.title') ||
     el.querySelector('[class*="StoreSaleWidgetTitle"]') ||
@@ -759,10 +738,10 @@ const processStoreElement = (el) => {
     return;
   }
 
-  // 3. Promote recommendation blocks, React sale widgets, modern React wishlist items, and table rows to outer container
+  // 3. Promote recommendation blocks, React sale widgets, modern React wishlist items, table rows, and hero capsules to outer container
   const recommendationCard = el.closest('.home_content.single, .home_content_single_ctn');
   const saleCard = el.closest(
-    '[class*="StoreSaleWidgetOuterContainer"], .StoreSaleWidgetOuterContainer, [class*="capsule_index_"], #StoreTemplate [role="button"], tr'
+    '[class*="StoreSaleWidgetOuterContainer"], .StoreSaleWidgetOuterContainer, [class*="capsule_index_"], #StoreTemplate [role="button"], tr, .store_main_capsule'
   );
 
   if (recommendationCard) {
@@ -802,7 +781,7 @@ const processStoreElement = (el) => {
   // 5. Do not treat multi-game container sections (e.g. calendar day columns, carousel tracks) as a single game capsule
   if (
     !el.matches(
-      '.home_content.single, .home_content_single_ctn, [class*="StoreSaleWidgetOuterContainer"], .StoreSaleWidgetOuterContainer'
+      '.home_content.single, .home_content_single_ctn, [class*="StoreSaleWidgetOuterContainer"], .StoreSaleWidgetOuterContainer, .store_main_capsule'
     )
   ) {
     const childCapsules = el.querySelectorAll(
@@ -993,6 +972,7 @@ const initUniversalStoreObserver = () => {
     '.search_result_row:not([data-slop-checked])',
     '.tab_item:not([data-slop-checked])',
     '.tab_row_item:not([data-slop-checked])',
+    '.store_main_capsule:not([data-slop-checked])',
     '.home_content.single:not([data-slop-checked])',
     '.home_content_single_ctn:not([data-slop-checked])',
     '[class*="StoreSaleWidgetOuterContainer"]:not([data-slop-checked])',
