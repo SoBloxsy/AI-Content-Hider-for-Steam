@@ -445,16 +445,17 @@ const applyAccessibleSlopStyle = (el, mode, data) => {
     el.querySelector('.cluster_capsule_image') ||
     el.querySelector('.iogiG-p5PHg-, div[style*="background-image"], [class*="EventBanner"], [class*="CapsuleImage"]');
 
-  // If inside calendar or custom tile, locate image's immediate parent (excluding mini avatars/icons)
+  // If inside calendar or custom tile, locate image's immediate parent (excluding mini avatars/icons and drag handles)
   if (!imgCtn) {
     const imgEl = Array.from(el.querySelectorAll('img')).find(img => {
       const parentText = img.parentElement ? img.parentElement.innerText.trim() : '';
+      const isDragHandle = !!img.closest('[data-rfd-drag-handle-draggable-id], [class*="drag_handle"]');
       const isAvatarOrIcon =
         img.classList.contains('go8QhZVoiDg-') ||
         img.className.toLowerCase().includes('avatar') ||
         img.className.toLowerCase().includes('icon') ||
         parentText.length > 0;
-      return !isAvatarOrIcon;
+      return !isDragHandle && !isAvatarOrIcon;
     });
     if (imgEl && imgEl.parentElement && imgEl.parentElement !== el) {
       imgCtn = imgEl.parentElement;
@@ -463,8 +464,8 @@ const applyAccessibleSlopStyle = (el, mode, data) => {
     }
   }
 
-  // Guard: if imgCtn contains text, it is a header/details container, not a capsule graphic
-  if (imgCtn && imgCtn.innerText.trim().length > 0) {
+  // Guard: if imgCtn contains text or is a drag handle, it is not a capsule graphic
+  if (imgCtn && (imgCtn.innerText.trim().length > 0 || imgCtn.closest('[data-rfd-drag-handle-draggable-id]'))) {
     imgCtn = null;
   }
 
@@ -547,6 +548,18 @@ const applyAccessibleSlopStyle = (el, mode, data) => {
   const newsHeaderPill = el.querySelector('[class*="Zlty4OIYdk8-"], [class*="cJRhUD4vyks-"]');
   const newsAppTitle = newsHeaderPill ? newsHeaderPill.querySelector('[class*="C2L2kTp8KYY-"]') : el.querySelector('[class*="C2L2kTp8KYY-"]');
 
+  // Locate wishlist title link if inside a modern or legacy wishlist row
+  const wishlistTitleLink = Array.from(el.querySelectorAll('a[href*="/app/"]')).find((a) => {
+    const text = a.textContent.trim();
+    return (
+      text.length > 0 &&
+      !a.querySelector('img') &&
+      !a.querySelector('[class*="discount"]') &&
+      !text.includes('%') &&
+      !text.includes('$')
+    );
+  });
+
   const titleEl =
     el.querySelector('.app_name div') ||
     el.querySelector('.app_name') ||
@@ -560,11 +573,16 @@ const applyAccessibleSlopStyle = (el, mode, data) => {
     el.querySelector('.match_name') ||
     el.querySelector('.name') ||
     newsAppTitle ||
+    wishlistTitleLink ||
     (el.tagName === 'TR' ? el.querySelector('td:nth-child(2) a[href*="/app/"], td a[href*="/app/"]') : null);
 
   const existingTitleBadge = titleEl ? titleEl.querySelector('.slop-badge') : null;
   const existingNewsBadge = newsHeaderPill ? newsHeaderPill.querySelector('.slop-badge') : null;
-  let badge = existingNewsBadge || existingTitleBadge || existingBadge;
+  const existingWishlistBadge =
+    wishlistTitleLink && wishlistTitleLink.parentElement
+      ? wishlistTitleLink.parentElement.querySelector('.slop-badge')
+      : null;
+  let badge = existingNewsBadge || existingWishlistBadge || existingTitleBadge || existingBadge;
 
   if (!badge) {
     badge = document.createElement('span');
@@ -583,6 +601,19 @@ const applyAccessibleSlopStyle = (el, mode, data) => {
       badge.style.flexShrink = '0';
       badge.style.lineHeight = '14px';
       newsHeaderPill.insertBefore(badge, newsAppTitle);
+    } else if (wishlistTitleLink) {
+      badge.style.display = 'inline-flex';
+      badge.style.alignItems = 'center';
+      badge.style.fontSize = '11px';
+      badge.style.fontWeight = 'bold';
+      badge.style.padding = '2px 7px';
+      badge.style.marginLeft = '12px';
+      badge.style.borderRadius = '3px';
+      badge.style.verticalAlign = 'middle';
+      badge.style.alignSelf = 'center';
+      badge.style.lineHeight = '14px';
+      const titleParent = wishlistTitleLink.parentElement || wishlistTitleLink;
+      titleParent.appendChild(badge);
     } else if (titleEl) {
       badge.style.display = 'inline-block';
       badge.style.fontSize = '11px';
@@ -626,6 +657,24 @@ const applyAccessibleSlopStyle = (el, mode, data) => {
     badge.style.flexShrink = '0';
     badge.style.lineHeight = '14px';
     newsHeaderPill.insertBefore(badge, newsAppTitle);
+  } else if (wishlistTitleLink && badge.parentElement !== (wishlistTitleLink.parentElement || wishlistTitleLink)) {
+    badge.style.position = '';
+    badge.style.bottom = '';
+    badge.style.left = '';
+    badge.style.zIndex = '';
+    badge.style.boxShadow = '';
+    badge.style.display = 'inline-flex';
+    badge.style.alignItems = 'center';
+    badge.style.fontSize = '11px';
+    badge.style.fontWeight = 'bold';
+    badge.style.padding = '2px 7px';
+    badge.style.marginLeft = '12px';
+    badge.style.borderRadius = '3px';
+    badge.style.verticalAlign = 'middle';
+    badge.style.alignSelf = 'center';
+    badge.style.lineHeight = '14px';
+    const titleParent = wishlistTitleLink.parentElement || wishlistTitleLink;
+    titleParent.appendChild(badge);
   }
 
   badge.style.display = '';
@@ -644,85 +693,8 @@ const applyAccessibleSlopStyle = (el, mode, data) => {
 
 // --- Apply Styles to Wishlist Items ---
 const applySlopStyleWishlist = (rowElement, mode, data) => {
-  const existingBadge = rowElement.querySelector('.slop-badge');
-
-  if (mode === 'none' || mode === '') {
-    rowElement.style.display = '';
-    rowElement.style.outline = '';
-    rowElement.style.outlineOffset = '';
-    rowElement.style.removeProperty('background');
-    if (existingBadge) existingBadge.style.display = 'none';
-    return;
-  }
-
   const effectiveMode = mode === 'hide' ? 'highlight' : mode;
-  rowElement.style.display = '';
-
-  const categories = data ? data.categories : [];
-  const isToleratedOnly = isToleratedCategoryOnly(categories);
-  const badgeLabel = formatCategoryTag(categories);
-
-  let badge = existingBadge;
-  if (!badge) {
-    badge = document.createElement('a');
-    badge.className = 'slop-badge';
-    badge.setAttribute('role', 'status');
-    badge.setAttribute('aria-label', `Notice: ${badgeLabel}`);
-    badge.setAttribute('tabindex', '0');
-    Object.assign(badge.style, {
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '2px 8px',
-      borderRadius: '2px',
-      fontSize: '11px',
-      fontWeight: 'bold',
-      lineHeight: 'normal',
-      textDecoration: 'none',
-      cursor: 'default',
-      whiteSpace: 'nowrap',
-      alignSelf: 'stretch',
-    });
-
-    const buttons = rowElement.querySelectorAll('button');
-    let cartButton = null;
-    for (const btn of buttons) {
-      if (btn.textContent.trim() === 'Add to Cart') {
-        cartButton = btn;
-        break;
-      }
-    }
-
-    if (cartButton && cartButton.parentElement) {
-      const cartContainer = cartButton.parentElement;
-      cartContainer.parentElement.insertBefore(badge, cartContainer);
-    } else {
-      rowElement.appendChild(badge);
-    }
-  }
-
-  badge.style.display = 'flex';
-  badge.textContent = badgeLabel;
-
-  const color = isToleratedOnly ? '#1976d2' : '#d32f2f';
-  if (effectiveMode === 'highlight') {
-    badge.style.backgroundColor = color;
-    badge.style.color = '#ffffff';
-    rowElement.style.outline = `2px solid ${color}`;
-    rowElement.style.outlineOffset = '-2px';
-    rowElement.style.setProperty(
-      'background',
-      isToleratedOnly ? 'rgba(0, 30, 60, 0.85)' : 'rgba(60, 0, 0, 0.85)',
-      'important'
-    );
-  } else {
-    badge.style.backgroundColor = 'rgba(255,255,255,0.1)';
-    badge.style.color = isToleratedOnly ? '#64b5f6' : '#c7d5e0';
-    badge.style.border = '1px solid rgba(255,255,255,0.2)';
-    rowElement.style.outline = '';
-    rowElement.style.outlineOffset = '';
-    rowElement.style.removeProperty('background');
-  }
+  applyAccessibleSlopStyle(rowElement, effectiveMode, data);
 };
 
 // --- Badge Counter Debounce ---
