@@ -1154,43 +1154,94 @@ const addfilterModePanel = () => {
 };
 
 const observeAdditionalOptions = () => {
-  const optionsContainer = document.getElementById('additional_search_options');
-  if (optionsContainer) {
-    addfilterModePanel();
-    const observer = new MutationObserver(() => {
-      if (!document.getElementById('slop-mode-filter')) {
-        addfilterModePanel();
+  const tryAttach = () => {
+    const optionsContainer = document.getElementById('additional_search_options');
+    if (!optionsContainer) return false;
+
+    if (!document.getElementById('slop-mode-filter')) {
+      addfilterModePanel();
+    }
+
+    if (!optionsContainer.dataset.slopObserved) {
+      optionsContainer.dataset.slopObserved = 'true';
+      const observer = new MutationObserver(() => {
+        if (!document.getElementById('slop-mode-filter')) {
+          addfilterModePanel();
+        }
+      });
+      observer.observe(optionsContainer, { childList: true, subtree: true });
+    }
+    return true;
+  };
+
+  if (!tryAttach()) {
+    const bodyObserver = new MutationObserver((_, obs) => {
+      if (tryAttach()) {
+        obs.disconnect();
       }
     });
-    observer.observe(optionsContainer, { childList: true, subtree: true });
+    bodyObserver.observe(document.body || document.documentElement, {
+      childList: true,
+      subtree: true,
+    });
   }
 };
 
 // --- Initialization ---
+const startExtension = () => {
+  if (currentPageAppId) {
+    const handled = handleStorePage();
+    if (!handled && document.body) {
+      const observer = new MutationObserver((_, obs) => {
+        if (handleStorePage()) {
+          obs.disconnect();
+        }
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+    }
+  }
+
+  initUniversalStoreObserver();
+
+  if (/\/search(?:\/|\?|$)/i.test(window.location.pathname || window.location.href)) {
+    observeAdditionalOptions();
+  }
+};
+
+// Start observers immediately so search widgets and store cards are never blocked
+startExtension();
+
+// Hydrate settings asynchronously from sync storage
 chrome.storage.sync.get(
   ['filterMode', 'ignoreLocalization', 'ignoreCode', 'ignoreConceptArt', 'ignoreMarketing'],
   (res) => {
+    if (chrome.runtime.lastError || !res) return;
     if (res.filterMode) currentMode = res.filterMode;
     ['ignoreLocalization', 'ignoreCode', 'ignoreConceptArt', 'ignoreMarketing'].forEach((key) => {
       if (res[key] !== undefined) filterSettings[key] = Boolean(res[key]);
     });
 
-    if (currentPageAppId) {
-      const handled = handleStorePage();
-      if (!handled && document.body) {
-        const observer = new MutationObserver((_, obs) => {
-          if (handleStorePage()) {
-            obs.disconnect();
-          }
-        });
-        observer.observe(document.body, { childList: true, subtree: true });
-      }
+    const panel = document.getElementById('slop-mode-filter');
+    if (panel) {
+      panel.querySelectorAll('.tab_filter_control_row[data-param="slop_mode"]').forEach((el) => {
+        el.classList.toggle('checked', el.dataset.value === currentMode);
+      });
+      panel.querySelectorAll('.tab_filter_control_row:not([data-param="slop_mode"])').forEach((el, idx) => {
+        const keys = ['ignoreLocalization', 'ignoreCode', 'ignoreConceptArt', 'ignoreMarketing'];
+        const k = keys[idx];
+        if (k) el.classList.toggle('checked', Boolean(filterSettings[k]));
+      });
     }
 
-    initUniversalStoreObserver();
-
-    if (window.location.href.includes('/search/')) {
-      observeAdditionalOptions();
-    }
+    reapplyStylesAcrossPage();
   }
 );
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== 'sync') return;
+  if (changes.filterMode) currentMode = changes.filterMode.newValue;
+  ['ignoreLocalization', 'ignoreCode', 'ignoreConceptArt', 'ignoreMarketing'].forEach((key) => {
+    if (changes[key] !== undefined) filterSettings[key] = Boolean(changes[key].newValue);
+  });
+  reapplyStylesAcrossPage();
+});
