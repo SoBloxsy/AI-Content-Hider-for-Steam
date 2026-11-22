@@ -31,8 +31,10 @@ const EXTENSION_FILES = [
 
 const baseManifest = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'manifest.json'), 'utf8'));
 const version = baseManifest.version;
+const isDev = process.argv.includes('--dev');
+const devFirefoxId = process.env.FIREFOX_ADDON_ID || 'steam-ai-filter-dev@alexratman';
 
-console.log(`Packaging Steam AI Filter v${version}...`);
+console.log(`Packaging Steam AI Filter v${version}${isDev ? ' (DEV BUILD)' : ''}...`);
 
 function populateTarget(targetDir, manifestData) {
   // Copy top-level files
@@ -55,17 +57,25 @@ function populateTarget(targetDir, manifestData) {
 // 1. Chrome Build
 const chromeManifest = { ...baseManifest };
 delete chromeManifest.browser_specific_settings;
+if (isDev) {
+  chromeManifest.name = `${baseManifest.name} (Dev)`;
+}
 populateTarget(CHROME_DIR, chromeManifest);
 
 // 2. Firefox Build
+const firefoxGeckoId = isDev
+  ? devFirefoxId
+  : (process.env.FIREFOX_ADDON_ID || baseManifest.browser_specific_settings?.gecko?.id || 'extensions@iren.blue');
+
 const firefoxManifest = {
   ...baseManifest,
+  name: isDev ? `${baseManifest.name} (Dev)` : baseManifest.name,
   background: {
     scripts: ['background.js'],
   },
   browser_specific_settings: {
     gecko: {
-      id: baseManifest.browser_specific_settings?.gecko?.id || 'extensions@iren.blue',
+      id: firefoxGeckoId,
       strict_min_version: '128.0',
       data_collection_permissions: {
         required: ['none'],
@@ -197,8 +207,9 @@ function createValidZip(sourceDir, outputFile) {
   fs.writeFileSync(outputFile, fullZip);
 }
 
-const chromeZip = path.join(DIST_DIR, `steam-ai-filter-chrome-v${version}.zip`);
-const firefoxZip = path.join(DIST_DIR, `steam-ai-filter-firefox-v${version}.zip`);
+const suffix = isDev ? '-dev' : '';
+const chromeZip = path.join(DIST_DIR, `steam-ai-filter-chrome-v${version}${suffix}.zip`);
+const firefoxZip = path.join(DIST_DIR, `steam-ai-filter-firefox-v${version}${suffix}.zip`);
 
 createValidZip(CHROME_DIR, chromeZip);
 createValidZip(FIREFOX_DIR, firefoxZip);
