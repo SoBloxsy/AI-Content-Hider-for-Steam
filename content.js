@@ -688,48 +688,46 @@ const queueBadgeUpdate = () => {
   }, 250);
 };
 
+// Hoisted control exclusion checker to avoid re-allocating closures on every intersected element
+const EXCLUDED_ACTION_REGEX =
+  /^(visit product page|add to wishlist|add to cart|add to your wishlist|ignore|find more like this|follow|customize|explore|view all|more like this)$/i;
+
+const isExcludedControl = (node) => {
+  if (!node) return false;
+
+  // Never exclude game cards, rows, or elements containing game artwork
+  if (
+    node.matches(
+      '.search_result_row, .tab_item, .tab_row_item, .home_content.single, .home_content_single_ctn, [class*="StoreSaleWidgetOuterContainer"], .StoreSaleWidgetOuterContainer, .sale_capsule, .store_capsule'
+    ) ||
+    node.querySelector('img, .capsule, .capsule_image_ctn, [class*="CapsuleImageCtn"]')
+  ) {
+    return false;
+  }
+
+  if (
+    node.matches(
+      'button, .btnv6_blue_hoverfade, .btnv6_white_transparent, .btn_small_tall, [class*="queue_btn"], [class*="wishlist_btn"], .game_area_purchase_game, .queue_control_button'
+    ) ||
+    node.closest('.btn_actions, .queue_actions_ctn, .cluster_control_ctn, .home_content.single_buttonbar, [class*="buttonbar"]')
+  ) {
+    return true;
+  }
+
+  // Exact action text matching restricted to small leaf link/span controls
+  if (node.tagName === 'A' || node.tagName === 'SPAN') {
+    const txt = (node.textContent || '').trim();
+    if (txt.length < 40 && EXCLUDED_ACTION_REGEX.test(txt)) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
 // --- Universal Store Element Processor ---
 const processStoreElement = (el) => {
   if (el.dataset.slopChecked) return;
-
-  // 1. Ignore UI buttons, wishlist/queue actions, and navigation controls FIRST
-  const isExcludedControl = (node) => {
-    if (!node) return false;
-
-    // Never exclude game cards, rows, or elements containing game artwork
-    if (
-      node.matches(
-        '.search_result_row, .tab_item, .tab_row_item, .home_content.single, .home_content_single_ctn, [class*="StoreSaleWidgetOuterContainer"], .StoreSaleWidgetOuterContainer, .sale_capsule, .store_capsule'
-      ) ||
-      node.querySelector('img, .capsule, .capsule_image_ctn, [class*="CapsuleImageCtn"]')
-    ) {
-      return false;
-    }
-
-    if (
-      node.matches(
-        'button, .btnv6_blue_hoverfade, .btnv6_white_transparent, .btn_small_tall, [class*="queue_btn"], [class*="wishlist_btn"], .game_area_purchase_game, .queue_control_button'
-      ) ||
-      node.closest('.btn_actions, .queue_actions_ctn, .cluster_control_ctn, .home_content.single_buttonbar, [class*="buttonbar"]')
-    ) {
-      return true;
-    }
-
-    // Exact action text matching restricted to small leaf link/span controls
-    if (node.tagName === 'A' || node.tagName === 'SPAN') {
-      const txt = (node.textContent || '').trim().toLowerCase();
-      if (
-        txt.length < 40 &&
-        /^(visit product page|add to wishlist|add to cart|add to your wishlist|ignore|find more like this|follow|customize|explore|view all|more like this)$/i.test(
-          txt
-        )
-      ) {
-        return true;
-      }
-    }
-
-    return false;
-  };
 
   if (isExcludedControl(el)) {
     el.dataset.slopChecked = 'true';
@@ -997,31 +995,47 @@ const initUniversalStoreObserver = () => {
     'a[href*="/app/"]:not([data-slop-checked])',
   ].join(', ');
 
-  let rafScheduled = false;
-  const observePendingElements = () => {
-    rafScheduled = false;
-    document.querySelectorAll(STORE_SELECTOR).forEach((el) => {
+  const observeElementsInSubtree = (root) => {
+    if (!root || !root.querySelectorAll) return;
+    if (root.matches && root.matches(STORE_SELECTOR)) {
+      if (!(root.tagName === 'A' && !root.dataset.dsAppid && root.children.length === 0 && !root.textContent.trim())) {
+        intersectionObserver.observe(root);
+      }
+    }
+    root.querySelectorAll(STORE_SELECTOR).forEach((el) => {
       if (el.tagName === 'A' && !el.dataset.dsAppid && el.children.length === 0 && !el.textContent.trim()) return;
       intersectionObserver.observe(el);
     });
   };
 
+  const pendingNodes = new Set();
+  let rafScheduled = false;
+
   const mutationObserver = new MutationObserver((mutations) => {
-    let hasAdditions = false;
     for (const m of mutations) {
-      if (m.addedNodes.length > 0) {
-        hasAdditions = true;
-        break;
+      for (let i = 0; i < m.addedNodes.length; i++) {
+        const node = m.addedNodes[i];
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          pendingNodes.add(node);
+        }
       }
     }
-    if (hasAdditions && !rafScheduled) {
+    if (pendingNodes.size > 0 && !rafScheduled) {
       rafScheduled = true;
-      requestAnimationFrame(observePendingElements);
+      requestAnimationFrame(() => {
+        rafScheduled = false;
+        pendingNodes.forEach((node) => {
+          if (node.isConnected) {
+            observeElementsInSubtree(node);
+          }
+        });
+        pendingNodes.clear();
+      });
     }
   });
 
   mutationObserver.observe(document.body || document.documentElement, { childList: true, subtree: true });
-  observePendingElements();
+  observeElementsInSubtree(document);
 };
 
 // --- In-Page Filter Mode Panel (Search Page) ---
@@ -1221,6 +1235,19 @@ const startExtension = () => {
 
 // Start observers immediately so search widgets and store cards are never blocked
 startExtension();
+
+// Pre-warm in-memory cache from local storage in a single non-blocking bulk read
+chrome.storage.local.get(null, (items) => {
+  if (chrome.runtime.lastError || !items) return;
+  for (const [k, v] of Object.entries(items)) {
+    if (k.startsWith('slop_cache_v3_')) {
+      const appId = k.slice(14);
+      if (v && v.ts && Date.now() - v.ts <= CACHE_TTL) {
+        memoryCache.set(appId, v);
+      }
+    }
+  }
+});
 
 // Hydrate settings asynchronously from sync storage
 chrome.storage.sync.get(
