@@ -584,6 +584,14 @@ const applyAccessibleSlopStyle = (el, mode, data) => {
     );
   });
 
+  // Locate chart table row title element (skipping empty hover trigger links)
+  const chartTitleEl =
+    el.tagName === 'TR'
+      ? Array.from(el.querySelectorAll('td:nth-child(2) a[href*="/app/"], td a[href*="/app/"]'))
+          .map((a) => a.querySelector('div') || a)
+          .find((node) => node.textContent.trim().length > 0 && !node.querySelector('img'))
+      : null;
+
   const titleEl =
     el.querySelector('.app_name div') ||
     el.querySelector('.app_name') ||
@@ -598,16 +606,23 @@ const applyAccessibleSlopStyle = (el, mode, data) => {
     el.querySelector('.name') ||
     newsAppTitle ||
     wishlistTitleLink ||
-    (el.tagName === 'TR' ? el.querySelector('td:nth-child(2) a[href*="/app/"], td a[href*="/app/"]') : null);
+    chartTitleEl;
 
   const existingHeroBadge = heroDiscountBlock ? heroDiscountBlock.querySelector('.slop-badge') : null;
+  const existingChartBadge = chartTitleEl ? chartTitleEl.querySelector('.slop-badge') : null;
   const existingTitleBadge = titleEl ? titleEl.querySelector('.slop-badge') : null;
   const existingNewsBadge = newsHeaderPill ? newsHeaderPill.querySelector('.slop-badge') : null;
   const existingWishlistBadge =
     wishlistTitleLink && wishlistTitleLink.parentElement
       ? wishlistTitleLink.parentElement.querySelector('.slop-badge')
       : null;
-  let badge = existingHeroBadge || existingNewsBadge || existingWishlistBadge || existingTitleBadge || existingBadge;
+  let badge =
+    existingHeroBadge ||
+    existingChartBadge ||
+    existingNewsBadge ||
+    existingWishlistBadge ||
+    existingTitleBadge ||
+    existingBadge;
 
   if (!badge) {
     badge = document.createElement('span');
@@ -659,6 +674,7 @@ const applyAccessibleSlopStyle = (el, mode, data) => {
       badge.style.borderRadius = '3px';
       badge.style.verticalAlign = 'middle';
       badge.style.letterSpacing = '0.3px';
+      badge.style.whiteSpace = 'nowrap';
       titleEl.appendChild(badge);
     } else {
       badge.style.display = 'block';
@@ -693,6 +709,22 @@ const applyAccessibleSlopStyle = (el, mode, data) => {
     badge.style.alignSelf = 'center';
     badge.style.lineHeight = '14px';
     heroDiscountBlock.insertBefore(badge, heroDiscountBlock.firstChild);
+  } else if (chartTitleEl && badge.parentElement !== chartTitleEl) {
+    badge.style.position = '';
+    badge.style.bottom = '';
+    badge.style.left = '';
+    badge.style.zIndex = '';
+    badge.style.boxShadow = '';
+    badge.style.display = 'inline-block';
+    badge.style.fontSize = '11px';
+    badge.style.fontWeight = 'bold';
+    badge.style.padding = '1px 5px';
+    badge.style.marginLeft = '8px';
+    badge.style.borderRadius = '3px';
+    badge.style.verticalAlign = 'middle';
+    badge.style.letterSpacing = '0.3px';
+    badge.style.whiteSpace = 'nowrap';
+    chartTitleEl.appendChild(badge);
   } else if (newsHeaderPill && newsAppTitle && badge.parentElement !== newsHeaderPill) {
     badge.style.position = '';
     badge.style.bottom = '';
