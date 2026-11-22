@@ -372,6 +372,15 @@ const checkMultipleAppIds = async (appIdStr) => {
 const reapplyStylesAcrossPage = () => {
   const isWishlist = window.location.href.includes('/wishlist/');
   document.querySelectorAll('[data-slop-checked="true"]').forEach((el) => {
+    // Avoid styling child elements inside an outer card or table row container
+    if (
+      el.parentElement &&
+      el.parentElement.closest(
+        'tr, .store_main_capsule, [class*="StoreSaleWidgetOuterContainer"], .StoreSaleWidgetOuterContainer, .home_content.single, .home_content_single_ctn'
+      )
+    ) {
+      return;
+    }
     const appIdStr = el.dataset.dsAppid;
     if (appIdStr) {
       const firstId = appIdStr.split(',')[0].trim();
@@ -394,6 +403,15 @@ const reapplyStylesAcrossPage = () => {
 
 // --- Universal Highlight Styler (Capsules, Carousels, Store Rows) ---
 const applyAccessibleSlopStyle = (el, mode, data) => {
+  // Prevent child elements inside an outer card or table row container from getting redundant outlines
+  if (
+    el.parentElement &&
+    el.parentElement.closest(
+      '.slop-highlighted, tr, .store_main_capsule, [class*="StoreSaleWidgetOuterContainer"], .StoreSaleWidgetOuterContainer, .home_content.single'
+    )
+  ) {
+    return;
+  }
   const existingBadge = el.querySelector('.slop-badge');
   const existingTint = el.querySelector('.slop-tint-overlay');
 
@@ -512,6 +530,7 @@ const applyAccessibleSlopStyle = (el, mode, data) => {
       const computedPos = window.getComputedStyle(imgCtn).position;
       if (computedPos === 'static') imgCtn.style.position = 'relative';
       imgCtn.style.overflow = 'hidden';
+      imgCtn.style.flexShrink = '0';
 
       let tint = imgCtn.querySelector('.slop-tint-overlay');
       if (!tint) {
@@ -545,6 +564,11 @@ const applyAccessibleSlopStyle = (el, mode, data) => {
   }
 
   // --- Badge Tag ---
+  // Locate hero carousel pricing block to mount badge in empty left whitespace
+  const heroDiscountBlock = el.matches('.store_main_capsule')
+    ? el.querySelector('.discount_block, [class*="discount_block"]')
+    : null;
+
   const newsHeaderPill = el.querySelector('[class*="Zlty4OIYdk8-"], [class*="cJRhUD4vyks-"]');
   const newsAppTitle = newsHeaderPill ? newsHeaderPill.querySelector('[class*="C2L2kTp8KYY-"]') : el.querySelector('[class*="C2L2kTp8KYY-"]');
 
@@ -576,13 +600,14 @@ const applyAccessibleSlopStyle = (el, mode, data) => {
     wishlistTitleLink ||
     (el.tagName === 'TR' ? el.querySelector('td:nth-child(2) a[href*="/app/"], td a[href*="/app/"]') : null);
 
+  const existingHeroBadge = heroDiscountBlock ? heroDiscountBlock.querySelector('.slop-badge') : null;
   const existingTitleBadge = titleEl ? titleEl.querySelector('.slop-badge') : null;
   const existingNewsBadge = newsHeaderPill ? newsHeaderPill.querySelector('.slop-badge') : null;
   const existingWishlistBadge =
     wishlistTitleLink && wishlistTitleLink.parentElement
       ? wishlistTitleLink.parentElement.querySelector('.slop-badge')
       : null;
-  let badge = existingNewsBadge || existingWishlistBadge || existingTitleBadge || existingBadge;
+  let badge = existingHeroBadge || existingNewsBadge || existingWishlistBadge || existingTitleBadge || existingBadge;
 
   if (!badge) {
     badge = document.createElement('span');
@@ -590,7 +615,18 @@ const applyAccessibleSlopStyle = (el, mode, data) => {
     badge.setAttribute('role', 'status');
     badge.setAttribute('aria-label', `Notice: ${badgeText}`);
 
-    if (newsHeaderPill && newsAppTitle) {
+    if (heroDiscountBlock) {
+      badge.style.display = 'inline-flex';
+      badge.style.alignItems = 'center';
+      badge.style.fontSize = '11px';
+      badge.style.fontWeight = 'bold';
+      badge.style.padding = '2px 7px';
+      badge.style.borderRadius = '3px';
+      badge.style.marginRight = 'auto';
+      badge.style.alignSelf = 'center';
+      badge.style.lineHeight = '14px';
+      heroDiscountBlock.insertBefore(badge, heroDiscountBlock.firstChild);
+    } else if (newsHeaderPill && newsAppTitle) {
       badge.style.display = 'inline-flex';
       badge.style.alignItems = 'center';
       badge.style.fontSize = '11px';
@@ -641,6 +677,22 @@ const applyAccessibleSlopStyle = (el, mode, data) => {
       if (computedPos === 'static') containerForBadge.style.position = 'relative';
       containerForBadge.appendChild(badge);
     }
+  } else if (heroDiscountBlock && badge.parentElement !== heroDiscountBlock) {
+    badge.style.position = '';
+    badge.style.bottom = '';
+    badge.style.left = '';
+    badge.style.zIndex = '';
+    badge.style.boxShadow = '';
+    badge.style.display = 'inline-flex';
+    badge.style.alignItems = 'center';
+    badge.style.fontSize = '11px';
+    badge.style.fontWeight = 'bold';
+    badge.style.padding = '2px 7px';
+    badge.style.borderRadius = '3px';
+    badge.style.marginRight = 'auto';
+    badge.style.alignSelf = 'center';
+    badge.style.lineHeight = '14px';
+    heroDiscountBlock.insertBefore(badge, heroDiscountBlock.firstChild);
   } else if (newsHeaderPill && newsAppTitle && badge.parentElement !== newsHeaderPill) {
     badge.style.position = '';
     badge.style.bottom = '';
