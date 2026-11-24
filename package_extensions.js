@@ -8,13 +8,16 @@ const DIST_DIR = path.join(BUILD_DIR, 'dist');
 const CHROME_DIR = path.join(BUILD_DIR, 'chrome');
 const FIREFOX_DIR = path.join(BUILD_DIR, 'firefox');
 
-// Clean / recreate build directories
-[BUILD_DIR, DIST_DIR, CHROME_DIR, FIREFOX_DIR].forEach((dir) => {
+// Clean / recreate staging directories while keeping dist/ intact across prod/dev runs
+[CHROME_DIR, FIREFOX_DIR].forEach((dir) => {
   if (fs.existsSync(dir)) {
     fs.rmSync(dir, { recursive: true, force: true });
   }
   fs.mkdirSync(dir, { recursive: true });
 });
+if (!fs.existsSync(DIST_DIR)) {
+  fs.mkdirSync(DIST_DIR, { recursive: true });
+}
 
 // Common extension files to include
 const EXTENSION_FILES = [
@@ -32,7 +35,7 @@ const EXTENSION_FILES = [
 const baseManifest = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'manifest.json'), 'utf8'));
 const version = baseManifest.version;
 const isDev = process.argv.includes('--dev');
-const devFirefoxId = process.env.FIREFOX_ADDON_ID || 'steam-ai-filter-dev@alexratman';
+const devFirefoxId = process.env.FIREFOX_ADDON_ID || 'steam-ai-filter-dev@iren.blue';
 
 console.log(`Packaging Steam AI Filter v${version}${isDev ? ' (DEV BUILD)' : ''}...`);
 
@@ -210,10 +213,13 @@ function createValidZip(sourceDir, outputFile) {
 const suffix = isDev ? '-dev' : '';
 const chromeZip = path.join(DIST_DIR, `steam-ai-filter-chrome-v${version}${suffix}.zip`);
 const firefoxZip = path.join(DIST_DIR, `steam-ai-filter-firefox-v${version}${suffix}.zip`);
+const firefoxXpi = path.join(DIST_DIR, `steam-ai-filter-firefox-v${version}${suffix}.xpi`);
 
 createValidZip(CHROME_DIR, chromeZip);
 createValidZip(FIREFOX_DIR, firefoxZip);
+fs.copyFileSync(firefoxZip, firefoxXpi);
 
 console.log(`Created Chrome Zip: ${chromeZip}`);
 console.log(`Created Firefox Zip: ${firefoxZip}`);
+console.log(`Created Firefox XPI: ${firefoxXpi}`);
 console.log('Packaging successfully finished with POSIX compliant directory separators!');
