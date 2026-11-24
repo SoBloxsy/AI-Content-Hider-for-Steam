@@ -52,25 +52,6 @@ const enqueueFetch = (task) => {
   });
 };
 
-// --- Settings Listener ---
-chrome.storage.onChanged.addListener((changes) => {
-  let shouldReapply = false;
-  if (changes.filterMode) {
-    currentMode = changes.filterMode.newValue;
-    shouldReapply = true;
-  }
-  ['ignoreLocalization', 'ignoreCode', 'ignoreConceptArt', 'ignoreMarketing'].forEach((key) => {
-    if (changes[key] !== undefined) {
-      filterSettings[key] = Boolean(changes[key].newValue);
-      shouldReapply = true;
-    }
-  });
-
-  if (shouldReapply) {
-    reapplyStylesAcrossPage();
-  }
-});
-
 // --- Category Patterns & Classification Engine ---
 const CATEGORY_PATTERNS = {
   localization: /(?:\b(?:translat|localis|localiz|subtitl|multilingual|language|deepl|grammat(?:ic)?|grammar)\w*\b|翻译|本地化|翻訳|ローカライズ|번역|현지화)/i,
@@ -89,6 +70,10 @@ const DENY_REGEX =
   /(?:\b(?:no|never|not|without|neither|none|nothing|zero)\b|n't\b|不使用|未使用|没有使用|使用していません|사용하지)/i;
 const AI_MENTION_REGEX =
   /(?:\b(?:ai|a\.i\.|artificial\s*intelligence|genai|generative|midjourney|stable\s*diffusion|dall-?e|firefly|leonardo|flux|sora|kling|runway|meshy|tripo|comfyui|suno|udio|elevenlabs)\b|生成|ＡＩ|人工智能)/i;
+const POSITIVE_USAGE_REGEX =
+  /(?:\b(?:used|uses|using|utiliz\w*|generat\w*|creat\w*|made|assist\w*|employ\w*|powered\s+by|built\s+with|talking\s+(?:to|with)|interact\w*\s+with|running)\b|使用|生成|采用)/i;
+const DIRECT_AI_NEGATION_REGEX =
+  /(?:\b(?:no|none)\s+(?:[a-z]+\s+){0,2}(?:generative\s+)?(?:ai|a\.i\.|artificial\s+intelligence)\b|\b(?:not|never|without)\s+(?:be(?:en)?\s+)?(?:us(?:e|ed|ing)|utiliz\w*|generat\w*|creat\w*|made|assist\w*)\b|n't\s+(?:be(?:en)?\s+)?(?:us(?:e|ed|ing)|utiliz\w*|generat\w*|creat\w*|made)\b|不使用|未使用|没有使用|使用していません|사용하지)/i;
 
 const classifyAiDisclosure = (text) => {
   if (!text) {
@@ -134,7 +119,19 @@ const classifyAiDisclosure = (text) => {
       const followingClause = nextSplit !== -1 ? rawFollowing.substring(0, nextSplit) : rawFollowing;
       const fullClause = precedingClause + match[0] + followingClause;
 
-      const isNegatedPreceding = DENY_REGEX.test(precedingClause);
+      let isNegatedPreceding = false;
+      const denyGlobal = new RegExp(DENY_REGEX.source, 'gi');
+      let lastDenyEnd = -1;
+      let denyMatch;
+      while ((denyMatch = denyGlobal.exec(precedingClause)) !== null) {
+        lastDenyEnd = denyMatch.index + denyMatch[0].length;
+      }
+      if (lastDenyEnd !== -1) {
+        const afterDeny = precedingClause.substring(lastDenyEnd);
+        const isOverriddenByPositiveUsage =
+          !DIRECT_AI_NEGATION_REGEX.test(precedingClause) && POSITIVE_USAGE_REGEX.test(afterDeny);
+        isNegatedPreceding = !isOverriddenByPositiveUsage;
+      }
 
       // Human-made exemptions only hold if that same clause doesn't also admit using AI
       const hasHumanPhrase = /\b(are\s+not\s+ai|are\s+human\s+made|were\s+hand-drawn|no\s+ai-generated|not\s+in\s+the\s+final|replaced\s+with\s+original)\b/i.test(
@@ -495,44 +492,47 @@ const checkUrlForSlop = async (appId) => {
   }
 };
 
-// Check a list of AppIDs (e.g. for bundles like "3059520,4148930")
+// Check a list of AppIDs (e.g. for bundles like "3059520,4148930") in parallel so they coalesce into one batch request
 const checkMultipleAppIds = async (appIdStr) => {
   const ids = appIdStr.split(',').map((id) => id.trim()).filter((id) => /^\d+$/.test(id));
   if (ids.length === 0) return { value: false, categories: [], details: '' };
 
+  const results = await Promise.all(ids.map((id) => checkUrlForSlop(id)));
+  return results.find((res) => res && res.value) || { value: false, categories: [], details: '' };
+};
+
+const getCachedSlopData = (appIdStr) => {
+  if (!appIdStr) return null;
+  const ids = appIdStr.split(',').map((id) => id.trim()).filter(Boolean);
+  let fallback = null;
   for (const id of ids) {
-    const res = await checkUrlForSlop(id);
-    if (res && res.value) {
-      return res; // Return first matching flagged game
-    }
+    const entry = memoryCache.get(id);
+    if (entry && entry.value) return entry;
+    if (entry && !fallback) fallback = entry;
   }
-  return { value: false, categories: [], details: '' };
+  return fallback;
 };
 
 // --- Reapply Styles across All Checked Games on Setting/Mode Change ---
 const reapplyStylesAcrossPage = () => {
   const isWishlist = window.location.href.includes('/wishlist/');
-  document.querySelectorAll('[data-slop-checked="true"]').forEach((el) => {
+  document.querySelectorAll('[data-slop-appid]').forEach((el) => {
     // Avoid styling child elements inside an outer card or table row container
     if (
       el.parentElement &&
       el.parentElement.closest(
-        'tr, .store_main_capsule, [class*="StoreSaleWidgetOuterContainer"], .StoreSaleWidgetOuterContainer, .home_content.single, .home_content_single_ctn'
+        '[data-slop-appid], tr, .store_main_capsule, [class*="StoreSaleWidgetOuterContainer"], .StoreSaleWidgetOuterContainer, .home_content.single, .home_content_single_ctn'
       )
     ) {
       return;
     }
-    const appIdStr = el.dataset.dsAppid;
-    if (appIdStr) {
-      const firstId = appIdStr.split(',')[0].trim();
-      const data = memoryCache.get(firstId);
-      if (data) {
-        const isFlagged = data.value && shouldFlagGame(data.categories, filterSettings);
-        if (isWishlist) {
-          applySlopStyleWishlist(el, isFlagged ? currentMode : 'none', data);
-        } else {
-          applyAccessibleSlopStyle(el, isFlagged ? currentMode : 'none', data);
-        }
+    const data = getCachedSlopData(el.dataset.dsAppid || el.dataset.slopAppid);
+    if (data) {
+      const isFlagged = data.value && shouldFlagGame(data.categories, filterSettings);
+      if (isWishlist) {
+        applySlopStyleWishlist(el, isFlagged ? currentMode : 'none', data);
+      } else {
+        applyAccessibleSlopStyle(el, isFlagged ? currentMode : 'none', data);
       }
     }
   });
@@ -540,6 +540,7 @@ const reapplyStylesAcrossPage = () => {
   if (currentPageAppId) {
     handleStorePage();
   }
+  queueBadgeUpdate();
 };
 
 // --- Universal Highlight Styler (Capsules, Carousels, Store Rows) ---
@@ -548,7 +549,7 @@ const applyAccessibleSlopStyle = (el, mode, data) => {
   if (
     el.parentElement &&
     el.parentElement.closest(
-      '.slop-highlighted, tr, .store_main_capsule, [class*="StoreSaleWidgetOuterContainer"], .StoreSaleWidgetOuterContainer, .home_content.single'
+      '[data-slop-appid], .slop-highlighted, tr, .store_main_capsule, [class*="StoreSaleWidgetOuterContainer"], .StoreSaleWidgetOuterContainer, .home_content.single'
     )
   ) {
     return;
@@ -713,17 +714,21 @@ const applyAccessibleSlopStyle = (el, mode, data) => {
   const newsHeaderPill = el.querySelector('[class*="Zlty4OIYdk8-"], [class*="cJRhUD4vyks-"]');
   const newsAppTitle = newsHeaderPill ? newsHeaderPill.querySelector('[class*="C2L2kTp8KYY-"]') : el.querySelector('[class*="C2L2kTp8KYY-"]');
 
-  // Locate wishlist title link if inside a modern or legacy wishlist row
-  const wishlistTitleLink = Array.from(el.querySelectorAll('a[href*="/app/"]')).find((a) => {
-    const text = a.textContent.trim();
-    return (
-      text.length > 0 &&
-      !a.querySelector('img') &&
-      !a.querySelector('[class*="discount"]') &&
-      !text.includes('%') &&
-      !text.includes('$')
-    );
-  });
+  // Locate wishlist title link strictly inside wishlist rows
+  const isWishlistContext =
+    window.location.pathname.includes('/wishlist') || el.matches('#StoreTemplate [role="button"]');
+  const wishlistTitleLink = isWishlistContext
+    ? Array.from(el.querySelectorAll('a[href*="/app/"]')).find((a) => {
+        const text = a.textContent.trim();
+        return (
+          text.length > 0 &&
+          !a.querySelector('img') &&
+          !a.querySelector('[class*="discount"]') &&
+          !text.includes('%') &&
+          !text.includes('$')
+        );
+      })
+    : null;
 
   // Locate chart table row title element (skipping empty hover trigger links)
   const chartTitleEl =
@@ -922,11 +927,26 @@ const applySlopStyleWishlist = (rowElement, mode, data) => {
   applyAccessibleSlopStyle(rowElement, effectiveMode, data);
 };
 
-// --- Badge Counter Debounce ---
+// --- Badge Counter Debounce (computed from live DOM cards to stay accurate across filter toggles & carousel swaps) ---
 let badgeUpdateTimer = null;
+const recomputeFlaggedCount = () => {
+  let count = 0;
+  document.querySelectorAll('[data-slop-appid]').forEach((el) => {
+    const data = getCachedSlopData(el.dataset.dsAppid || el.dataset.slopAppid);
+    if (data && data.value && shouldFlagGame(data.categories, filterSettings)) {
+      count++;
+    }
+  });
+  if (document.getElementById('slop-warning-banner')) {
+    count = Math.max(count, 1);
+  }
+  flaggedCount = count;
+};
+
 const queueBadgeUpdate = () => {
   if (badgeUpdateTimer) clearTimeout(badgeUpdateTimer);
   badgeUpdateTimer = setTimeout(() => {
+    recomputeFlaggedCount();
     chrome.runtime.sendMessage({ type: 'updateBadge', count: flaggedCount });
   }, 250);
 };
@@ -994,6 +1014,9 @@ const siblingHasOtherGame = (node, appId) => {
   return false;
 };
 
+const CAROUSEL_CONTROL_SELECTOR =
+  '[class*="Arrow"], [class*="Paging"], [class*="Thumbs"], button[aria-label*="Next" i], button[aria-label*="Previous" i]';
+
 const findSingleAppTile = (el, appId) => {
   if (!appId || !/\/(?:sale|category|specials)\b/i.test(window.location.pathname)) {
     return el;
@@ -1006,6 +1029,8 @@ const findSingleAppTile = (el, appId) => {
       parent === document.body ||
       parent.id === 'StoreTemplate' ||
       parent.children.length > 6 ||
+      parent.offsetWidth > 850 ||
+      parent.querySelector(CAROUSEL_CONTROL_SELECTOR) ||
       siblingHasOtherGame(tile, appId)
     ) {
       break;
@@ -1617,10 +1642,26 @@ chrome.storage.sync.get(
 );
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName !== 'sync') return;
-  if (changes.filterMode) currentMode = changes.filterMode.newValue;
-  ['ignoreLocalization', 'ignoreCode', 'ignoreConceptArt', 'ignoreMarketing'].forEach((key) => {
-    if (changes[key] !== undefined) filterSettings[key] = Boolean(changes[key].newValue);
-  });
-  reapplyStylesAcrossPage();
+  if (areaName === 'sync') {
+    let shouldReapply = false;
+    if (changes.filterMode) {
+      currentMode = changes.filterMode.newValue;
+      shouldReapply = true;
+    }
+    ['ignoreLocalization', 'ignoreCode', 'ignoreConceptArt', 'ignoreMarketing'].forEach((key) => {
+      if (changes[key] !== undefined) {
+        filterSettings[key] = Boolean(changes[key].newValue);
+        shouldReapply = true;
+      }
+    });
+    if (shouldReapply) {
+      reapplyStylesAcrossPage();
+    }
+  } else if (areaName === 'local') {
+    for (const [key, change] of Object.entries(changes)) {
+      if (key.startsWith('slop_cache_v3_') && change.newValue === undefined) {
+        memoryCache.delete(key.slice(14));
+      }
+    }
+  }
 });
