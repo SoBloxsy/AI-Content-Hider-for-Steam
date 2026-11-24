@@ -35,7 +35,7 @@ const EXTENSION_FILES = [
 const baseManifest = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'manifest.json'), 'utf8'));
 const version = baseManifest.version;
 const isDev = process.argv.includes('--dev');
-const devFirefoxId = process.env.FIREFOX_ADDON_ID || 'steam-ai-filter-dev@iren.blue';
+const devFirefoxId = process.env.FIREFOX_ADDON_ID || 'steam-ai-filter-dev@alexratman';
 
 console.log(`Packaging Steam AI Filter v${version}${isDev ? ' (DEV BUILD)' : ''}...`);
 
