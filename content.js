@@ -73,15 +73,22 @@ chrome.storage.onChanged.addListener((changes) => {
 
 // --- Category Patterns & Classification Engine ---
 const CATEGORY_PATTERNS = {
-  localization: /\b(translat|localis|localiz|subtitl|multilingual|language|deepl|grammat(ic)?|grammar)\w*\b/i,
-  art_in_game: /\b(art|artwork|texture|sprite|illustration|portrait|background|3d\s*model|cg|image|wallpaper|visual|animation|icon|painting|cinematic|video|upscal|card\s*design|render|asset|draw(n|ing)?)\w*\b/i,
+  localization: /(?:\b(?:translat|localis|localiz|subtitl|multilingual|language|deepl|grammat(?:ic)?|grammar)\w*\b|翻译|本地化|翻訳|ローカライズ|번역|현지화)/i,
+  art_in_game: /(?:\b(?:art|artwork|texture|sprite|illustration|portrait|backgrounds?(?!\s+(?:music|audio|sound|track|score|ambience|noise|story|lore|history))|backdrop|3d\s*model|character\s*model|character\s*design|key\s*art|cg|image|imagery|wallpaper|visual|animation|cutscene|icon|painting|poster|cinematic|video|upscal|card\s*design|render|asset|(?:hand-)?drawn|drawing|midjourney|stable\s*diffusion|dall-?e|firefly|leonardo|flux|sora|kling|runway|meshy|tripo|comfyui|imagen|text-to-image|image-to-image|img2img)\w*\b|立绘|美术|插画|图片|画像|イラスト|立ち絵|背景|이미지|일러스트)/i,
   concept_art: /\b(concept\s*art|early\s*concept|ideat\w*|brainstorm\w*|pre-production|in-dev|early\s*dev\w*|prototyp\w*|inspiration|moodboard|reference\s*(only|image|material)?|placeholder|not\s*(used\s*in|in)\s*(the\s*)?(final\s*)?game|replaced\s*(in|with|for)\s*(the\s*)?(final\s*)?game)\b/i,
-  audio_music: /\b(voice|audio|music|sound|sfx|voiceover|\bvo\b|dubbing|speech|tts|vocal|song|instrumental|spoken)\w*\b/i,
+  audio_music: /(?:\b(?:voice|audio|music|musical|bgm|soundtrack|sound|sfx|voiceover|voice\s*acting|voice\s*line|\bvo\b|dubbing|narration|narrator|speech|tts|text-to-speech|vocal|song|track|jingle|instrumental|spoken|elevenlabs|suno|udio|aiva)\w*\b|音乐|音效|配音|语音|音楽|効果音|音声|보이스|음악|효과음)/i,
   live_generation: /\b(during\s+(game)?play|real-time|in\s+real\s+time|on\s+the\s+fly|live-generate|dynamic(ally)?\s+generate|chatbot|llm|interrogat|conversation|respond|response|tailored\s+to\s+player|player\s+input|talk\s+(to|with))\w*\b/i,
   code: /\b(code|coding|programming|copilot|scripting|mechanic)\w*\b/i,
   text_narrative: /\b(story|dialog(ue)?|script|writing|scenario|monologue|narrative|lore|quest|text-generate|generated\s+text)\w*\b/i,
   marketing: /\b(store\s*page|trailer|capsule|promotional|banner|marketing)\w*\b/i,
 };
+
+const CLAUSE_SPLIT_REGEX =
+  /[.!?;:\n。！？；]+|,?\s+\b(?:but|however|whereas)\b\s+|,\s*\bwhile\b\s+|,\s*(?=(?:and\s+|while\s+)?(?:no|not|none|nothing|neither|zero)\b)/i;
+const DENY_REGEX =
+  /(?:\b(?:no|never|not|without|neither|none|nothing|zero)\b|n't\b|不使用|未使用|没有使用|使用していません|사용하지)/i;
+const AI_MENTION_REGEX =
+  /(?:\b(?:ai|a\.i\.|artificial\s*intelligence|genai|generative|midjourney|stable\s*diffusion|dall-?e|firefly|leonardo|flux|sora|kling|runway|meshy|tripo|comfyui|suno|udio|elevenlabs)\b|生成|ＡＩ|人工智能)/i;
 
 const classifyAiDisclosure = (text) => {
   if (!text) {
@@ -112,21 +119,30 @@ const classifyAiDisclosure = (text) => {
         }
       }
 
-      // Look back up to 120 characters in the same sentence/clause
-      const preceding = text.substring(Math.max(0, idx - 120), idx).toLowerCase();
-      const lastPunct = Math.max(preceding.lastIndexOf('.'), preceding.lastIndexOf(';'), preceding.lastIndexOf('\n'));
-      const clause = lastPunct !== -1 ? preceding.substring(lastPunct + 1) : preceding;
+      // Extract clause around match using contrastive & sentence boundaries
+      const rawPreceding = text.substring(Math.max(0, idx - 140), idx);
+      const splitGlobal = new RegExp(CLAUSE_SPLIT_REGEX.source, 'gi');
+      let lastSplitEnd = 0;
+      let splitMatch;
+      while ((splitMatch = splitGlobal.exec(rawPreceding)) !== null) {
+        lastSplitEnd = splitMatch.index + splitMatch[0].length;
+      }
+      const precedingClause = rawPreceding.substring(lastSplitEnd);
 
-      const isNegatedPreceding =
-        /\b(no|never|not|without|neither|zero)\s+([a-z0-9_,-]+\s+){0,10}$/i.test(clause) ||
-        /\bno\s+ai\s+(was|is)?\s*(used|utilized)?\s*(in|for)?\s*(the\s+creation\s+of\s+)?(any\s+)?([a-z0-9_,-]+\s+)*$/i.test(clause);
+      const rawFollowing = text.substring(idx + match[0].length, Math.min(text.length, idx + match[0].length + 120));
+      const nextSplit = rawFollowing.search(CLAUSE_SPLIT_REGEX);
+      const followingClause = nextSplit !== -1 ? rawFollowing.substring(0, nextSplit) : rawFollowing;
+      const fullClause = precedingClause + match[0] + followingClause;
 
-      // Check following words in same sentence for 'are not ai' or 'are human made' or 'hand-drawn'
-      const following = text.substring(idx + match[0].length, Math.min(text.length, idx + match[0].length + 100));
-      const firstPunct = following.search(/[.!?\n]/);
-      const followingClause = firstPunct !== -1 ? following.substring(0, firstPunct) : following;
+      const isNegatedPreceding = DENY_REGEX.test(precedingClause);
+
+      // Human-made exemptions only hold if that same clause doesn't also admit using AI
+      const hasHumanPhrase = /\b(are\s+not\s+ai|are\s+human\s+made|were\s+hand-drawn|no\s+ai-generated|not\s+in\s+the\s+final|replaced\s+with\s+original)\b/i.test(
+        followingClause
+      );
       const isNegatedFollowing =
-        /\b(are\s+not\s+ai|are\s+human\s+made|were\s+hand-drawn|no\s+ai-generated|not\s+in\s+the\s+final|replaced\s+with\s+original)\b/i.test(followingClause);
+        hasHumanPhrase &&
+        (!/\b(human\s+made|hand-drawn)\b/i.test(followingClause) || !AI_MENTION_REGEX.test(precedingClause));
 
       if (!isNegatedPreceding && !isNegatedFollowing) {
         matched = true;
@@ -275,7 +291,160 @@ const extractDisclosureFromStream = async (response) => {
   return { hasDisclosureHeading, descriptorText };
 };
 
-// --- App Checker with In-Flight Deduplication & Concurrency Limits ---
+// --- Batch Store API & HTML Stream Fallback ---
+const BATCH_API_URL = 'https://api.steampowered.com/IStoreBrowseService/GetItems/v1/';
+const BATCH_SIZE = 100;
+const BATCH_DELAY_MS = 40;
+let cachedStoreCountry = null;
+
+const getStoreCountry = () => {
+  if (cachedStoreCountry) return cachedStoreCountry;
+  try {
+    const configAttr = document.getElementById('application_config')?.dataset?.config;
+    if (configAttr) {
+      cachedStoreCountry = JSON.parse(configAttr)?.COUNTRY || 'US';
+      return cachedStoreCountry;
+    }
+  } catch (_) {}
+  cachedStoreCountry = 'US';
+  return cachedStoreCountry;
+};
+
+const fetchSingleAppHtmlStream = async (appId) => {
+  return enqueueFetch(async () => {
+    try {
+      const response = await fetch(
+        `https://store.steampowered.com/app/${appId}/?l=english`,
+        { credentials: 'omit' }
+      );
+
+      if (!response.ok) {
+        return { value: false, categories: [], details: '', ts: Date.now() };
+      }
+
+      const { hasDisclosureHeading, descriptorText } = await extractDisclosureFromStream(response);
+
+      const result = hasDisclosureHeading
+        ? classifyAiDisclosure(descriptorText || 'AI content used.')
+        : { value: false, categories: [], details: '' };
+
+      const entry = { ...result, ts: Date.now() };
+      memoryCache.set(appId, entry);
+      chrome.storage.local.set({ [`slop_cache_v3_${appId}`]: entry });
+
+      chrome.runtime.sendMessage({
+        type: 'incrementStats',
+        checked: 1,
+        flagged: entry.value ? 1 : 0,
+      });
+
+      return entry;
+    } catch (_) {
+      return { value: false, categories: [], details: '', ts: 0 };
+    }
+  });
+};
+
+const pendingBatchQueue = new Map();
+let batchFlushTimer = null;
+
+const scheduleBatchFlush = () => {
+  if (pendingBatchQueue.size >= BATCH_SIZE) {
+    if (batchFlushTimer) {
+      clearTimeout(batchFlushTimer);
+      batchFlushTimer = null;
+    }
+    flushBatchQueue();
+  } else if (!batchFlushTimer) {
+    batchFlushTimer = setTimeout(() => {
+      batchFlushTimer = null;
+      flushBatchQueue();
+    }, BATCH_DELAY_MS);
+  }
+};
+
+const flushBatchQueue = async () => {
+  if (pendingBatchQueue.size === 0) return;
+
+  const batchEntries = Array.from(pendingBatchQueue.entries()).slice(0, BATCH_SIZE);
+  for (const [id] of batchEntries) {
+    pendingBatchQueue.delete(id);
+  }
+  if (pendingBatchQueue.size > 0) {
+    scheduleBatchFlush();
+  }
+
+  const batchIds = batchEntries.map(([id]) => id);
+  const waitersById = new Map(batchEntries);
+  const unresolvedIds = new Set(batchIds);
+
+  try {
+    const json = await enqueueFetch(async () => {
+      const input = {
+        ids: batchIds.map((id) => ({ appid: Number(id) })),
+        context: { language: 'english', country_code: getStoreCountry() },
+        data_request: { include_extra_details: true },
+      };
+      const response = await fetch(`${BATCH_API_URL}?input_json=${encodeURIComponent(JSON.stringify(input))}`, {
+        credentials: 'omit',
+      });
+      if (!response.ok) throw new Error(`GetItems ${response.status}`);
+      return await response.json();
+    });
+
+    const storageBatch = {};
+    let checkedCount = 0;
+    let flaggedInBatch = 0;
+    const now = Date.now();
+
+    for (const item of json?.response?.store_items ?? []) {
+      if (item.success !== 1) continue;
+      const appId = String(item.appid);
+      if (!unresolvedIds.has(appId)) continue;
+
+      const notes = item.extra_details?.content_survey_ai_notes;
+      const hasNotes = typeof notes === 'string' && notes.trim().length > 0;
+      const result = hasNotes
+        ? classifyAiDisclosure(notes)
+        : { value: false, categories: [], details: '' };
+
+      const entry = { ...result, ts: now };
+      memoryCache.set(appId, entry);
+      storageBatch[`slop_cache_v3_${appId}`] = entry;
+      unresolvedIds.delete(appId);
+
+      checkedCount++;
+      if (entry.value) flaggedInBatch++;
+
+      for (const { resolve } of waitersById.get(appId) || []) {
+        resolve(entry);
+      }
+    }
+
+    if (checkedCount > 0) {
+      chrome.storage.local.set(storageBatch);
+      chrome.runtime.sendMessage({
+        type: 'incrementStats',
+        checked: checkedCount,
+        flagged: flaggedInBatch,
+      });
+    }
+  } catch (_) {}
+
+  // Fall back to individual store HTML streaming only for items omitted by GetItems or on API error
+  if (unresolvedIds.size > 0) {
+    await Promise.all(
+      Array.from(unresolvedIds).map(async (appId) => {
+        const entry = await fetchSingleAppHtmlStream(appId);
+        for (const { resolve } of waitersById.get(appId) || []) {
+          resolve(entry);
+        }
+      })
+    );
+  }
+};
+
+// --- App Checker with In-Flight Deduplication & Batch API ---
 const checkUrlForSlop = async (appId) => {
   if (memoryCache.has(appId)) {
     const entry = memoryCache.get(appId);
@@ -309,40 +478,12 @@ const checkUrlForSlop = async (appId) => {
       }
     }
 
-    return enqueueFetch(async () => {
-      try {
-        const response = await fetch(
-          `https://store.steampowered.com/app/${appId}/?l=english`,
-          { credentials: 'omit' }
-        );
-
-        if (!response.ok) {
-          return { value: false, categories: [], details: '', ts: Date.now() };
-        }
-
-        const { hasDisclosureHeading, descriptorText } = await extractDisclosureFromStream(response);
-
-        let result;
-        if (hasDisclosureHeading) {
-          result = classifyAiDisclosure(descriptorText || 'AI content used.');
-        } else {
-          result = { value: false, categories: [], details: '' };
-        }
-
-        const entry = { ...result, ts: Date.now() };
-        memoryCache.set(appId, entry);
-        chrome.storage.local.set({ [storageKey]: entry });
-
-        chrome.runtime.sendMessage({
-          type: 'incrementStats',
-          checked: 1,
-          flagged: entry.value ? 1 : 0,
-        });
-
-        return entry;
-      } catch (e) {
-        return { value: false, categories: [], details: '', ts: 0 };
+    return new Promise((resolve, reject) => {
+      if (!pendingBatchQueue.has(appId)) {
+        pendingBatchQueue.set(appId, []);
       }
+      pendingBatchQueue.get(appId).push({ resolve, reject });
+      scheduleBatchFlush();
     });
   })();
 
@@ -827,9 +968,57 @@ const isExcludedControl = (node) => {
   return false;
 };
 
+// Climb parent containers on React sale/category hubs while sibling nodes belong exclusively to the same AppID
+const extractAppIdFromNode = (node) => {
+  if (!node) return null;
+  if (node.dataset && node.dataset.dsAppid) return node.dataset.dsAppid.split(',')[0].trim();
+  const href = node.getAttribute ? node.getAttribute('href') : node.href;
+  const match = href ? href.match(/\/app\/(\d+)/) : null;
+  return match ? match[1] : null;
+};
+
+const siblingHasOtherGame = (node, appId) => {
+  const parent = node.parentElement;
+  if (!parent) return false;
+  for (let i = 0; i < parent.children.length; i++) {
+    const sibling = parent.children[i];
+    if (sibling === node) continue;
+    const siblingId = extractAppIdFromNode(sibling);
+    if (siblingId && siblingId !== appId) return true;
+    const nested = sibling.querySelectorAll('a[href*="/app/"], [data-ds-appid]');
+    for (let j = 0; j < nested.length; j++) {
+      const nestedId = extractAppIdFromNode(nested[j]);
+      if (nestedId && nestedId !== appId) return true;
+    }
+  }
+  return false;
+};
+
+const findSingleAppTile = (el, appId) => {
+  if (!appId || !/\/(?:sale|category|specials)\b/i.test(window.location.pathname)) {
+    return el;
+  }
+  let tile = el;
+  for (let depth = 0; depth < 6; depth++) {
+    const parent = tile.parentElement;
+    if (
+      !parent ||
+      parent === document.body ||
+      parent.id === 'StoreTemplate' ||
+      parent.children.length > 6 ||
+      siblingHasOtherGame(tile, appId)
+    ) {
+      break;
+    }
+    tile = parent;
+  }
+  return tile;
+};
+
 // --- Universal Store Element Processor ---
 const processStoreElement = (el) => {
-  if (el.dataset.slopChecked) return;
+  const currentId = extractAppIdFromNode(el);
+  if (el.dataset.slopChecked && (!currentId || el.dataset.slopAppid === currentId)) return;
 
   if (isExcludedControl(el)) {
     el.dataset.slopChecked = 'true';
@@ -881,6 +1070,26 @@ const processStoreElement = (el) => {
       child.dataset.slopChecked = 'true';
     });
     el = saleCard;
+  } else {
+    const rawId =
+      el.dataset.dsAppid ||
+      el.querySelector('[data-ds-appid]')?.dataset?.dsAppid ||
+      el.querySelector('a[href*="/app/"]')?.href?.match(/\/app\/(\d+)/)?.[1] ||
+      currentId;
+    if (rawId) {
+      const tileTarget = findSingleAppTile(el, rawId.split(',')[0].trim());
+      if (tileTarget && tileTarget !== el) {
+        if (tileTarget.dataset.slopChecked) {
+          el.dataset.slopChecked = 'true';
+          return;
+        }
+        tileTarget.dataset.slopChecked = 'true';
+        tileTarget.querySelectorAll('*').forEach((child) => {
+          child.dataset.slopChecked = 'true';
+        });
+        el = tileTarget;
+      }
+    }
   }
 
   // 4. Prevent nested elements from getting duplicate badges
@@ -921,13 +1130,17 @@ const processStoreElement = (el) => {
 
   if (!appId) return;
 
+  const primaryAppId = appId.split(',')[0].trim();
+
   // On an individual store page (/app/12345/...), do NOT outline self-links or breadcrumbs!
-  if (currentPageAppId && appId.split(',')[0].trim() === currentPageAppId) {
+  if (currentPageAppId && primaryAppId === currentPageAppId) {
     el.dataset.slopChecked = 'true';
+    el.dataset.slopAppid = primaryAppId;
     return;
   }
 
   el.dataset.slopChecked = 'true';
+  el.dataset.slopAppid = primaryAppId;
   el.dataset.dsAppid = appId;
 
   // Use checkMultipleAppIds to handle bundles / comma-separated AppIDs (e.g. F1 25)
@@ -1115,6 +1328,27 @@ const initUniversalStoreObserver = () => {
 
   const mutationObserver = new MutationObserver((mutations) => {
     for (const m of mutations) {
+      if (m.type === 'attributes') {
+        const target = m.target;
+        if (target && target.nodeType === Node.ELEMENT_NODE) {
+          const newAppId = extractAppIdFromNode(target);
+          const card = target.closest('[data-slop-appid]') || target;
+          if (newAppId && card.dataset.slopAppid && card.dataset.slopAppid !== newAppId) {
+            delete card.dataset.slopChecked;
+            delete card.dataset.slopAppid;
+            card.querySelectorAll('[data-slop-checked]').forEach((child) => {
+              delete child.dataset.slopChecked;
+              delete child.dataset.slopAppid;
+            });
+            applyAccessibleSlopStyle(card, 'none', null);
+            pendingNodes.add(card);
+          } else if (newAppId && !target.dataset.slopChecked) {
+            pendingNodes.add(target);
+          }
+        }
+        continue;
+      }
+
       for (let i = 0; i < m.addedNodes.length; i++) {
         const node = m.addedNodes[i];
         if (node.nodeType === Node.ELEMENT_NODE) {
@@ -1136,7 +1370,12 @@ const initUniversalStoreObserver = () => {
     }
   });
 
-  mutationObserver.observe(document.body || document.documentElement, { childList: true, subtree: true });
+  mutationObserver.observe(document.body || document.documentElement, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['href', 'data-ds-appid'],
+  });
   observeElementsInSubtree(document);
 };
 
