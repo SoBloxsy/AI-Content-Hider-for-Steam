@@ -1,6 +1,7 @@
 // Accessible high-visibility theme colors
-// Warning Red: #d32f2f (outline/border) & rgba(163, 1, 0, 0.28) (capsule tint overlay)
+// Warning Red: #d32f2f (released non-tolerated AI content)
 // Accent Blue: #1976d2 (informational / tolerated items)
+// Early Access / Pre-Release Purple: #9c27b0 (red + blue blend)
 
 console.log('%c[AI Disclosure]%c', 'color:#d32f2f; font-weight:bold;', '', 'Content script loaded.');
 
@@ -10,6 +11,8 @@ let filterSettings = {
   ignoreCode: false,
   ignoreConceptArt: false,
   ignoreMarketing: false,
+  ignoreEarlyAccess: false,
+  ignorePreRelease: false,
 };
 
 const CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -18,6 +21,36 @@ let flaggedCount = 0;
 // Memory cache stores: { value: boolean, categories: string[], details: string, ts: number }
 const memoryCache = new Map();
 const inFlightFetches = new Map();
+
+// --- Cache Warm-Up Promise (P1: Eliminates N+1 initial storage IPC queries) ---
+let isCacheWarm = false;
+let warmResolver = null;
+const cacheWarmPromise = new Promise((resolve) => {
+  warmResolver = resolve;
+});
+
+// Single bulk read on startup to populate memoryCache and batch prune expired entries
+chrome.storage.local.get(null, (items) => {
+  if (!chrome.runtime.lastError && items) {
+    const expiredKeys = [];
+    const now = Date.now();
+    for (const [key, val] of Object.entries(items)) {
+      if (key.startsWith('slop_cache_v3_') && val) {
+        const appId = key.slice(14);
+        if (val.ts && now - val.ts > CACHE_TTL) {
+          expiredKeys.push(key);
+        } else if (typeof val.isEarlyAccess === 'boolean') {
+          memoryCache.set(appId, val);
+        }
+      }
+    }
+    if (expiredKeys.length > 0) {
+      chrome.storage.local.remove(expiredKeys);
+    }
+  }
+  isCacheWarm = true;
+  if (warmResolver) warmResolver();
+});
 
 // Current page AppID if on a store page (e.g. /app/4262460/)
 const getCurrentPageAppId = () => {
@@ -75,6 +108,14 @@ const POSITIVE_USAGE_REGEX =
 const DIRECT_AI_NEGATION_REGEX =
   /(?:\b(?:no|none)\s+(?:[a-z]+\s+){0,2}(?:generative\s+)?(?:ai|a\.i\.|artificial\s+intelligence)\b|\b(?:not|never|without)\s+(?:be(?:en)?\s+)?(?:us(?:e|ed|ing)|utiliz\w*|generat\w*|creat\w*|made|assist\w*)\b|n't\s+(?:be(?:en)?\s+)?(?:us(?:e|ed|ing)|utiliz\w*|generat\w*|creat\w*|made)\b|不使用|未使用|没有使用|使用していません|사용하지)/i;
 
+// Pre-compiled global regular expressions (P3: Eliminates dynamic RegExp allocation overhead)
+const CATEGORY_PATTERNS_GLOBAL = {};
+for (const [cat, regex] of Object.entries(CATEGORY_PATTERNS)) {
+  CATEGORY_PATTERNS_GLOBAL[cat] = new RegExp(regex.source, 'gi');
+}
+const CLAUSE_SPLIT_GLOBAL = new RegExp(CLAUSE_SPLIT_REGEX.source, 'gi');
+const DENY_GLOBAL = new RegExp(DENY_REGEX.source, 'gi');
+
 const classifyAiDisclosure = (text) => {
   if (!text) {
     return {
@@ -87,8 +128,8 @@ const classifyAiDisclosure = (text) => {
   const detected = [];
   const lowerText = text.toLowerCase();
 
-  for (const [cat, regex] of Object.entries(CATEGORY_PATTERNS)) {
-    const globalRegex = new RegExp(regex.source, 'gi');
+  for (const [cat, globalRegex] of Object.entries(CATEGORY_PATTERNS_GLOBAL)) {
+    globalRegex.lastIndex = 0;
     let match;
     let matched = false;
 
@@ -106,10 +147,10 @@ const classifyAiDisclosure = (text) => {
 
       // Extract clause around match using contrastive & sentence boundaries
       const rawPreceding = text.substring(Math.max(0, idx - 140), idx);
-      const splitGlobal = new RegExp(CLAUSE_SPLIT_REGEX.source, 'gi');
+      CLAUSE_SPLIT_GLOBAL.lastIndex = 0;
       let lastSplitEnd = 0;
       let splitMatch;
-      while ((splitMatch = splitGlobal.exec(rawPreceding)) !== null) {
+      while ((splitMatch = CLAUSE_SPLIT_GLOBAL.exec(rawPreceding)) !== null) {
         lastSplitEnd = splitMatch.index + splitMatch[0].length;
       }
       const precedingClause = rawPreceding.substring(lastSplitEnd);
@@ -120,10 +161,10 @@ const classifyAiDisclosure = (text) => {
       const fullClause = precedingClause + match[0] + followingClause;
 
       let isNegatedPreceding = false;
-      const denyGlobal = new RegExp(DENY_REGEX.source, 'gi');
+      DENY_GLOBAL.lastIndex = 0;
       let lastDenyEnd = -1;
       let denyMatch;
-      while ((denyMatch = denyGlobal.exec(precedingClause)) !== null) {
+      while ((denyMatch = DENY_GLOBAL.exec(precedingClause)) !== null) {
         lastDenyEnd = denyMatch.index + denyMatch[0].length;
       }
       if (lastDenyEnd !== -1) {
@@ -184,8 +225,12 @@ const classifyAiDisclosure = (text) => {
   };
 };
 
-const shouldFlagGame = (categories, settings) => {
+const shouldFlagGame = (categories, settings, data) => {
   if (!categories || categories.length === 0) return false;
+  if (data) {
+    if (data.isEarlyAccess && settings.ignoreEarlyAccess) return false;
+    if (data.isComingSoon && settings.ignorePreRelease) return false;
+  }
   if (categories.includes('unspecified')) return true;
 
   const activeCategories = categories.filter((cat) => {
@@ -252,7 +297,7 @@ const extractDisclosureFromStream = async (response) => {
           }
           try {
             await reader.cancel();
-          } catch (_) {}
+          } catch (_) { }
           break;
         }
       } else if (
@@ -264,18 +309,18 @@ const extractDisclosureFromStream = async (response) => {
         // If sys_req is reached without finding descriptors, the game has none.
         try {
           await reader.cancel();
-        } catch (_) {}
+        } catch (_) { }
         break;
       }
 
       if (html.length > 250000) {
         try {
           await reader.cancel();
-        } catch (_) {}
+        } catch (_) { }
         break;
       }
     }
-  } catch (_) {}
+  } catch (_) { }
 
   if (!hasDisclosureHeading && html.includes('AI Generated Content Disclosure')) {
     hasDisclosureHeading = true;
@@ -285,7 +330,12 @@ const extractDisclosureFromStream = async (response) => {
     }
   }
 
-  return { hasDisclosureHeading, descriptorText };
+  const isEarlyAccess =
+    html.includes('id="earlyAccessHeader"') || html.includes('class="early_access_header"');
+  const isComingSoon =
+    html.includes('class="game_area_comingsoon"') || /<h1>\s*Pre-Purchase\b/i.test(html);
+
+  return { hasDisclosureHeading, descriptorText, isEarlyAccess, isComingSoon };
 };
 
 // --- Batch Store API & HTML Stream Fallback ---
@@ -302,7 +352,7 @@ const getStoreCountry = () => {
       cachedStoreCountry = JSON.parse(configAttr)?.COUNTRY || 'US';
       return cachedStoreCountry;
     }
-  } catch (_) {}
+  } catch (_) { }
   cachedStoreCountry = 'US';
   return cachedStoreCountry;
 };
@@ -319,13 +369,14 @@ const fetchSingleAppHtmlStream = async (appId) => {
         return { value: false, categories: [], details: '', ts: Date.now() };
       }
 
-      const { hasDisclosureHeading, descriptorText } = await extractDisclosureFromStream(response);
+      const { hasDisclosureHeading, descriptorText, isEarlyAccess, isComingSoon } =
+        await extractDisclosureFromStream(response);
 
       const result = hasDisclosureHeading
         ? classifyAiDisclosure(descriptorText || 'AI content used.')
         : { value: false, categories: [], details: '' };
 
-      const entry = { ...result, ts: Date.now() };
+      const entry = { ...result, isEarlyAccess, isComingSoon, ts: Date.now() };
       memoryCache.set(appId, entry);
       chrome.storage.local.set({ [`slop_cache_v3_${appId}`]: entry });
 
@@ -380,7 +431,7 @@ const flushBatchQueue = async () => {
       const input = {
         ids: batchIds.map((id) => ({ appid: Number(id) })),
         context: { language: 'english', country_code: getStoreCountry() },
-        data_request: { include_extra_details: true },
+        data_request: { include_extra_details: true, include_release: true },
       };
       const response = await fetch(`${BATCH_API_URL}?input_json=${encodeURIComponent(JSON.stringify(input))}`, {
         credentials: 'omit',
@@ -405,7 +456,14 @@ const flushBatchQueue = async () => {
         ? classifyAiDisclosure(notes)
         : { value: false, categories: [], details: '' };
 
-      const entry = { ...result, ts: now };
+      const isEarlyAccess = Boolean(
+        item.is_early_access ||
+        item.release?.is_early_access ||
+        item.extra_details?.early_access ||
+        item.extra_details?.links_and_info?.genreids?.includes(70)
+      );
+      const isComingSoon = Boolean(item.is_coming_soon || item.release?.is_coming_soon);
+      const entry = { ...result, isEarlyAccess, isComingSoon, ts: now };
       memoryCache.set(appId, entry);
       storageBatch[`slop_cache_v3_${appId}`] = entry;
       unresolvedIds.delete(appId);
@@ -426,7 +484,7 @@ const flushBatchQueue = async () => {
         flagged: flaggedInBatch,
       });
     }
-  } catch (_) {}
+  } catch (_) { }
 
   // Fall back to individual store HTML streaming only for items omitted by GetItems or on API error
   if (unresolvedIds.size > 0) {
@@ -452,6 +510,17 @@ const checkUrlForSlop = async (appId) => {
     }
   }
 
+  // P1: Await startup cache warming so initial store elements never fire N+1 storage reads
+  if (!isCacheWarm) {
+    await cacheWarmPromise;
+    if (memoryCache.has(appId)) {
+      const entry = memoryCache.get(appId);
+      if (entry.ts && Date.now() - entry.ts <= CACHE_TTL) {
+        return entry;
+      }
+    }
+  }
+
   if (inFlightFetches.has(appId)) {
     return inFlightFetches.get(appId);
   }
@@ -469,7 +538,7 @@ const checkUrlForSlop = async (appId) => {
     });
 
     if (cached !== undefined && cached !== null) {
-      if (cached.ts && Date.now() - cached.ts <= CACHE_TTL) {
+      if (cached.ts && Date.now() - cached.ts <= CACHE_TTL && typeof cached.isEarlyAccess === 'boolean') {
         memoryCache.set(appId, cached);
         return cached;
       }
@@ -498,17 +567,34 @@ const checkMultipleAppIds = async (appIdStr) => {
   if (ids.length === 0) return { value: false, categories: [], details: '' };
 
   const results = await Promise.all(ids.map((id) => checkUrlForSlop(id)));
-  return results.find((res) => res && res.value) || { value: false, categories: [], details: '' };
+  const aiApps = results.filter((res) => res && res.value);
+  if (aiApps.length === 0) return { value: false, categories: [], details: '' };
+  const primary = aiApps[0];
+  return {
+    ...primary,
+    // Only attribute Early Access or Coming Soon if ALL AI sub-apps in the bundle qualify (prevents non-AI bundle pollution)
+    isEarlyAccess: aiApps.every((r) => Boolean(r.isEarlyAccess)),
+    isComingSoon: aiApps.every((r) => Boolean(r.isComingSoon)),
+  };
 };
 
 const getCachedSlopData = (appIdStr) => {
   if (!appIdStr) return null;
   const ids = appIdStr.split(',').map((id) => id.trim()).filter(Boolean);
+  const aiEntries = [];
   let fallback = null;
   for (const id of ids) {
     const entry = memoryCache.get(id);
-    if (entry && entry.value) return entry;
+    if (entry && entry.value) aiEntries.push(entry);
     if (entry && !fallback) fallback = entry;
+  }
+  if (aiEntries.length > 0) {
+    const primary = aiEntries[0];
+    return {
+      ...primary,
+      isEarlyAccess: aiEntries.every((r) => Boolean(r.isEarlyAccess)),
+      isComingSoon: aiEntries.every((r) => Boolean(r.isComingSoon)),
+    };
   }
   return fallback;
 };
@@ -521,14 +607,14 @@ const reapplyStylesAcrossPage = () => {
     if (
       el.parentElement &&
       el.parentElement.closest(
-        '[data-slop-appid], tr, .store_main_capsule, [class*="StoreSaleWidgetOuterContainer"], .StoreSaleWidgetOuterContainer, .home_content.single, .home_content_single_ctn'
+        '[data-slop-appid], tr, .store_main_capsule, [class*="StoreSaleWidgetOuterContainer"], .StoreSaleWidgetOuterContainer, [data-key="hover div"], .home_content.single, .home_content_single_ctn, .cHqcdcYARwo-, [role="button"]:has([class*="AppVideoCtn"])'
       )
     ) {
       return;
     }
     const data = getCachedSlopData(el.dataset.dsAppid || el.dataset.slopAppid);
     if (data) {
-      const isFlagged = data.value && shouldFlagGame(data.categories, filterSettings);
+      const isFlagged = data.value && shouldFlagGame(data.categories, filterSettings, data);
       if (isWishlist) {
         applySlopStyleWishlist(el, isFlagged ? currentMode : 'none', data);
       } else {
@@ -547,22 +633,27 @@ const reapplyStylesAcrossPage = () => {
 const applyAccessibleSlopStyle = (el, mode, data) => {
   // Prevent child elements inside an outer card or table row container from getting redundant outlines
   if (
+    mode !== 'none' &&
+    mode !== '' &&
     el.parentElement &&
     el.parentElement.closest(
-      '[data-slop-appid], .slop-highlighted, tr, .store_main_capsule, [class*="StoreSaleWidgetOuterContainer"], .StoreSaleWidgetOuterContainer, .home_content.single'
+      '[data-slop-appid], .slop-highlighted, tr, .store_main_capsule, [class*="StoreSaleWidgetOuterContainer"], .StoreSaleWidgetOuterContainer, [data-key="hover div"], .home_content.single, .cHqcdcYARwo-, [role="button"]:has([class*="AppVideoCtn"])'
     )
   ) {
     return;
   }
   const existingBadge = el.querySelector('.slop-badge');
   const existingTint = el.querySelector('.slop-tint-overlay');
+  const bottomBar = el.querySelector('[class*="CapsuleBottomBar"]');
 
   if (mode === 'none' || mode === '') {
     el.style.display = '';
     el.style.outline = '';
     el.style.outlineOffset = '';
+    el.style.boxShadow = '';
     el.style.border = '';
     el.style.removeProperty('background');
+    if (bottomBar) bottomBar.style.removeProperty('background');
     el.removeAttribute('aria-hidden');
     el.classList.remove('slop-hidden', 'slop-highlighted');
     if (existingBadge) existingBadge.style.display = 'none';
@@ -572,6 +663,8 @@ const applyAccessibleSlopStyle = (el, mode, data) => {
 
   if (mode === 'hide') {
     el.style.display = 'none';
+    el.style.boxShadow = '';
+    if (bottomBar) bottomBar.style.removeProperty('background');
     el.setAttribute('aria-hidden', 'true');
     el.classList.add('slop-hidden');
     if (existingTint) existingTint.remove();
@@ -584,13 +677,21 @@ const applyAccessibleSlopStyle = (el, mode, data) => {
 
   const categories = data ? data.categories : [];
   const isToleratedOnly = isToleratedCategoryOnly(categories);
+  const isEarlyOrPreRelease = Boolean(data && (data.isEarlyAccess || data.isComingSoon));
   const badgeText = formatCategoryTag(categories);
 
-  const highlightColor = isToleratedOnly ? '#1976d2' : '#d32f2f';
-  const overlayHue = isToleratedOnly ? 'rgba(25, 118, 210, 0.28)' : 'rgba(211, 47, 47, 0.32)';
+  const highlightColor = isEarlyOrPreRelease ? '#9c27b0' : isToleratedOnly ? '#1976d2' : '#d32f2f';
+  const overlayHue = isEarlyOrPreRelease
+    ? 'rgba(156, 39, 176, 0.34)'
+    : isToleratedOnly
+      ? 'rgba(25, 118, 210, 0.28)'
+      : 'rgba(211, 47, 47, 0.32)';
+  const isDiscoveryQueueCard = el.matches('.cHqcdcYARwo-, [role="button"]:has([class*="AppVideoCtn"])');
 
   // Find exact image target: avoid putting relative positioning on entire calendar cells
   let imgCtn =
+    (bottomBar && (bottomBar.previousElementSibling || bottomBar.parentElement?.firstElementChild)) ||
+    el.querySelector('[class*="HeroCapsuleImageContainer"]') ||
     el.querySelector('.capsule_image_ctn') ||
     el.querySelector('.tab_item_header') ||
     el.querySelector('.tab_item_cap') ||
@@ -603,19 +704,19 @@ const applyAccessibleSlopStyle = (el, mode, data) => {
     el.querySelector('.sale_capsule_image') ||
     el.querySelector('[class*="SaleCapsuleImage"]') ||
     el.querySelector('.cluster_capsule_image') ||
+    el.querySelector('.nL4oSzmS8Ds-') ||
     el.querySelector('.iogiG-p5PHg-, div[style*="background-image"], [class*="EventBanner"], [class*="CapsuleImage"]');
 
-  // If inside calendar or custom tile, locate image's immediate parent (excluding mini avatars/icons and drag handles)
+  // If inside calendar or custom tile, locate image's immediate parent (excluding mini avatars/icons, News pills, and drag handles)
   if (!imgCtn) {
     const imgEl = Array.from(el.querySelectorAll('img')).find(img => {
-      const parentText = img.parentElement ? img.parentElement.innerText.trim() : '';
       const isDragHandle = !!img.closest('[data-rfd-drag-handle-draggable-id], [class*="drag_handle"]');
+      const isNewsHeaderPill = !!img.closest('[class*="Zlty4OIYdk8-"], [class*="cJRhUD4vyks-"]');
       const isAvatarOrIcon =
         img.classList.contains('go8QhZVoiDg-') ||
         img.className.toLowerCase().includes('avatar') ||
-        img.className.toLowerCase().includes('icon') ||
-        parentText.length > 0;
-      return !isDragHandle && !isAvatarOrIcon;
+        img.className.toLowerCase().includes('icon');
+      return !isDragHandle && !isNewsHeaderPill && !isAvatarOrIcon;
     });
     if (imgEl && imgEl.parentElement && imgEl.parentElement !== el) {
       imgCtn = imgEl.parentElement;
@@ -624,8 +725,17 @@ const applyAccessibleSlopStyle = (el, mode, data) => {
     }
   }
 
-  // Guard: if imgCtn contains text or is a drag handle, it is not a capsule graphic
-  if (imgCtn && (imgCtn.innerText.trim().length > 0 || imgCtn.closest('[data-rfd-drag-handle-draggable-id]'))) {
+  // Guard: cover entire Discovery Queue card, but exclude drag handles, News pills, and multi-section outer containers
+  if (isDiscoveryQueueCard) {
+    imgCtn = el;
+  } else if (
+    imgCtn &&
+    (imgCtn.closest('[data-rfd-drag-handle-draggable-id], [class*="drag_handle"], [class*="Zlty4OIYdk8-"], [class*="cJRhUD4vyks-"]') ||
+      (imgCtn === el &&
+        el.querySelector(
+          '.cV6I71ujCms-, .discount_block, [class*="discount_block"], [class*="StoreSalePriceWidgetContainer"], .app_name, .title, [class*="StoreSaleWidgetTitle"], [class*="ReviewScore"]'
+        )))
+  ) {
     imgCtn = null;
   }
 
@@ -639,25 +749,55 @@ const applyAccessibleSlopStyle = (el, mode, data) => {
       el.style.borderRadius = '4px';
       el.style.setProperty(
         'background',
-        isToleratedOnly ? 'rgba(0, 30, 60, 0.85)' : 'rgba(60, 0, 0, 0.85)',
+        isEarlyOrPreRelease
+          ? 'rgba(45, 10, 60, 0.85)'
+          : isToleratedOnly
+            ? 'rgba(0, 30, 60, 0.85)'
+            : 'rgba(60, 0, 0, 0.85)',
         'important'
       );
     } else if (
       el.matches('.home_content.single, .home_content_single_ctn') ||
       el.matches(
-        '[class*="StoreSaleWidgetOuterContainer"], .StoreSaleWidgetOuterContainer, [class*="capsule_index_"], #StoreTemplate [role="button"], tr, .store_main_capsule'
+        '[class*="StoreSaleWidgetOuterContainer"], .StoreSaleWidgetOuterContainer, [data-key="hover div"], [class*="capsule_index_"], #StoreTemplate [role="button"], tr, .store_main_capsule, .cHqcdcYARwo-, [role="button"]:has([class*="AppVideoCtn"])'
       )
     ) {
-      // 2. Recommendation block, React sale card, modern wishlist row, chart row, or hero capsule: outline entire container
+      // 2. Recommendation block, React sale card, modern wishlist row, chart row, hero capsule, or Discovery Queue slide: outline entire container
       el.style.outline = `2px solid ${highlightColor}`;
-      el.style.outlineOffset = '-2px';
       el.style.borderRadius = '4px';
+      if (el.matches('[data-key="hover div"], [class*="StoreSaleWidgetOuterContainer"], .StoreSaleWidgetOuterContainer, [class*="capsule_index_"]')) {
+        el.style.outlineOffset = '0px';
+        el.style.boxShadow = `0 0 0 2px ${highlightColor}`;
+      } else {
+        el.style.outlineOffset = '-2px';
+        el.style.boxShadow = '';
+      }
 
-      // Only apply dark background wash to recommendation banners, wishlist rows, chart rows, and hero cards, not React sale widgets
-      if (!el.matches('[class*="StoreSaleWidgetOuterContainer"], .StoreSaleWidgetOuterContainer, [class*="capsule_index_"]')) {
+      if (isDiscoveryQueueCard) {
         el.style.setProperty(
           'background',
-          isToleratedOnly ? 'rgba(0, 30, 60, 0.45)' : 'rgba(60, 0, 0, 0.45)',
+          isEarlyOrPreRelease
+            ? 'linear-gradient(rgb(75, 20, 95) 0%, rgb(38, 10, 52) 80%)'
+            : isToleratedOnly
+              ? 'linear-gradient(rgb(20, 50, 90) 0%, rgb(15, 30, 55) 80%)'
+              : 'linear-gradient(rgb(95, 22, 22) 0%, rgb(48, 12, 16) 80%)',
+          'important'
+        );
+      } else {
+        el.style.setProperty(
+          'background',
+          isEarlyOrPreRelease
+            ? 'rgba(48, 12, 64, 0.48)'
+            : isToleratedOnly
+              ? 'rgba(0, 30, 60, 0.45)'
+              : 'rgba(60, 0, 0, 0.45)',
+          'important'
+        );
+      }
+      if (bottomBar) {
+        bottomBar.style.setProperty(
+          'background',
+          isEarlyOrPreRelease ? 'rgb(46, 12, 58)' : isToleratedOnly ? 'rgb(12, 32, 58)' : 'rgb(58, 12, 14)',
           'important'
         );
       }
@@ -665,9 +805,10 @@ const applyAccessibleSlopStyle = (el, mode, data) => {
       // 3. Generic Card / Capsule: outline strictly confined to container
       el.style.outline = `2px solid ${highlightColor}`;
       el.style.outlineOffset = '-2px';
+      el.style.boxShadow = '';
     }
 
-    // Universal capsule thumbnail tint overlay for all elements with an image container
+    // Universal capsule thumbnail / video tint overlay for all elements with an image container
     if (imgCtn) {
       const computedPos = window.getComputedStyle(imgCtn).position;
       if (computedPos === 'static') imgCtn.style.position = 'relative';
@@ -685,13 +826,14 @@ const applyAccessibleSlopStyle = (el, mode, data) => {
           width: '100%',
           height: '100%',
           pointerEvents: 'none',
-          zIndex: '5',
+          zIndex: isDiscoveryQueueCard ? '6' : '10',
           borderRadius: 'inherit',
           transition: 'background 0.2s ease',
         });
         imgCtn.appendChild(tint);
       }
       tint.style.display = 'block';
+      tint.style.zIndex = isDiscoveryQueueCard ? '6' : '10';
       tint.style.background = overlayHue;
       tint.style.boxShadow = 'none';
     }
@@ -699,8 +841,10 @@ const applyAccessibleSlopStyle = (el, mode, data) => {
     // Mode is "text" (clean, no background wash or red tint)
     el.style.outline = '';
     el.style.outlineOffset = '';
+    el.style.boxShadow = '';
     el.style.border = '';
     el.style.removeProperty('background');
+    if (bottomBar) bottomBar.style.removeProperty('background');
     el.classList.remove('slop-highlighted');
     if (existingTint) existingTint.remove();
   }
@@ -719,24 +863,27 @@ const applyAccessibleSlopStyle = (el, mode, data) => {
     window.location.pathname.includes('/wishlist') || el.matches('#StoreTemplate [role="button"]');
   const wishlistTitleLink = isWishlistContext
     ? Array.from(el.querySelectorAll('a[href*="/app/"]')).find((a) => {
-        const text = a.textContent.trim();
-        return (
-          text.length > 0 &&
-          !a.querySelector('img') &&
-          !a.querySelector('[class*="discount"]') &&
-          !text.includes('%') &&
-          !text.includes('$')
-        );
-      })
+      const text = a.textContent.trim();
+      return (
+        text.length > 0 &&
+        !a.querySelector('img') &&
+        !a.querySelector('[class*="discount"]') &&
+        !text.includes('%') &&
+        !text.includes('$')
+      );
+    })
     : null;
 
   // Locate chart table row title element (skipping empty hover trigger links)
   const chartTitleEl =
     el.tagName === 'TR'
       ? Array.from(el.querySelectorAll('td:nth-child(2) a[href*="/app/"], td a[href*="/app/"]'))
-          .map((a) => a.querySelector('div') || a)
-          .find((node) => node.textContent.trim().length > 0 && !node.querySelector('img'))
+        .map((a) => a.querySelector('div') || a)
+        .find((node) => node.textContent.trim().length > 0 && !node.querySelector('img'))
       : null;
+
+  const dqTitleCtn = isDiscoveryQueueCard ? el.querySelector('.HZwPEaho3zY-') : null;
+  const dqTitleEl = dqTitleCtn ? dqTitleCtn.querySelector('a.QGtGxOFRQ-w-') : null;
 
   const titleEl =
     el.querySelector('.app_name div') ||
@@ -758,6 +905,7 @@ const applyAccessibleSlopStyle = (el, mode, data) => {
   const existingChartBadge = chartTitleEl ? chartTitleEl.querySelector('.slop-badge') : null;
   const existingTitleBadge = titleEl ? titleEl.querySelector('.slop-badge') : null;
   const existingNewsBadge = newsHeaderPill ? newsHeaderPill.querySelector('.slop-badge') : null;
+  const existingDqBadge = dqTitleCtn ? dqTitleCtn.querySelector('.slop-badge') : null;
   const existingWishlistBadge =
     wishlistTitleLink && wishlistTitleLink.parentElement
       ? wishlistTitleLink.parentElement.querySelector('.slop-badge')
@@ -766,6 +914,7 @@ const applyAccessibleSlopStyle = (el, mode, data) => {
     existingHeroBadge ||
     existingChartBadge ||
     existingNewsBadge ||
+    existingDqBadge ||
     existingWishlistBadge ||
     existingTitleBadge ||
     existingBadge;
@@ -787,6 +936,17 @@ const applyAccessibleSlopStyle = (el, mode, data) => {
       badge.style.alignSelf = 'center';
       badge.style.lineHeight = '14px';
       heroDiscountBlock.insertBefore(badge, heroDiscountBlock.firstChild);
+    } else if (dqTitleCtn && dqTitleEl) {
+      badge.style.display = 'inline-block';
+      badge.style.width = 'fit-content';
+      badge.style.fontSize = '11px';
+      badge.style.fontWeight = 'bold';
+      badge.style.padding = '2px 6px';
+      badge.style.margin = '4px 0';
+      badge.style.borderRadius = '3px';
+      badge.style.letterSpacing = '0.3px';
+      badge.style.whiteSpace = 'nowrap';
+      dqTitleCtn.insertBefore(badge, dqTitleEl.nextSibling);
     } else if (newsHeaderPill && newsAppTitle) {
       badge.style.display = 'inline-flex';
       badge.style.alignItems = 'center';
@@ -834,7 +994,7 @@ const applyAccessibleSlopStyle = (el, mode, data) => {
       badge.style.borderRadius = '2px';
       badge.style.boxShadow = '0 1px 4px rgba(0,0,0,0.7)';
 
-      const containerForBadge = imgCtn || el;
+      const containerForBadge = el.querySelector('.cV6I71ujCms-') ? el : (imgCtn || el);
       const computedPos = window.getComputedStyle(containerForBadge).position;
       if (computedPos === 'static') containerForBadge.style.position = 'relative';
       containerForBadge.appendChild(badge);
@@ -916,8 +1076,8 @@ const applyAccessibleSlopStyle = (el, mode, data) => {
     badge.style.border = `1px solid ${highlightColor}`;
   } else {
     badge.style.backgroundColor = 'rgba(20, 24, 30, 0.9)';
-    badge.style.color = isToleratedOnly ? '#64b5f6' : '#ff8a80';
-    badge.style.border = `1px solid ${isToleratedOnly ? '#1976d2' : '#d32f2f'}`;
+    badge.style.color = isEarlyOrPreRelease ? '#ce93d8' : isToleratedOnly ? '#64b5f6' : '#ff8a80';
+    badge.style.border = `1px solid ${highlightColor}`;
   }
 };
 
@@ -933,7 +1093,7 @@ const recomputeFlaggedCount = () => {
   let count = 0;
   document.querySelectorAll('[data-slop-appid]').forEach((el) => {
     const data = getCachedSlopData(el.dataset.dsAppid || el.dataset.slopAppid);
-    if (data && data.value && shouldFlagGame(data.categories, filterSettings)) {
+    if (data && data.value && shouldFlagGame(data.categories, filterSettings, data)) {
       count++;
     }
   });
@@ -1017,6 +1177,9 @@ const siblingHasOtherGame = (node, appId) => {
 const CAROUSEL_CONTROL_SELECTOR =
   '[class*="Arrow"], [class*="Paging"], [class*="Thumbs"], button[aria-label*="Next" i], button[aria-label*="Previous" i]';
 
+const STORE_CHECKABLE_SELECTOR =
+  'a[href*="/app/"], [data-ds-appid], .capsule, .search_result_row, .tab_item, [class*="CapsuleBottomBar"]';
+
 const findSingleAppTile = (el, appId) => {
   if (!appId || !/\/(?:sale|category|specials)\b/i.test(window.location.pathname)) {
     return el;
@@ -1029,9 +1192,9 @@ const findSingleAppTile = (el, appId) => {
       parent === document.body ||
       parent.id === 'StoreTemplate' ||
       parent.children.length > 6 ||
-      parent.offsetWidth > 850 ||
       parent.querySelector(CAROUSEL_CONTROL_SELECTOR) ||
-      siblingHasOtherGame(tile, appId)
+      siblingHasOtherGame(tile, appId) ||
+      parent.offsetWidth > 850
     ) {
       break;
     }
@@ -1063,11 +1226,15 @@ const processStoreElement = (el) => {
     return;
   }
 
-  // 3. Promote recommendation blocks, React sale widgets, modern React wishlist items, table rows, and hero capsules to outer container
+  // 3. Promote recommendation blocks, React sale widgets, modern React wishlist items, table rows, hero capsules, and Discovery Queue slides to outer container
   const recommendationCard = el.closest('.home_content.single, .home_content_single_ctn');
-  const saleCard = el.closest(
-    '[class*="StoreSaleWidgetOuterContainer"], .StoreSaleWidgetOuterContainer, [class*="capsule_index_"], #StoreTemplate [role="button"], tr, .store_main_capsule'
+  const rawSaleCard = el.closest(
+    '[class*="StoreSaleWidgetOuterContainer"], .StoreSaleWidgetOuterContainer, [data-key="hover div"], [class*="capsule_index_"], #StoreTemplate [role="button"], tr, .store_main_capsule, .cHqcdcYARwo-, [role="button"]:has([class*="AppVideoCtn"])'
   );
+  const saleCard =
+    rawSaleCard && rawSaleCard.matches('[class*="capsule_index_"]')
+      ? (rawSaleCard.querySelector('[data-key="hover div"]') || rawSaleCard)
+      : rawSaleCard;
 
   if (recommendationCard) {
     const targetCard = recommendationCard.matches('.home_content.single')
@@ -1079,9 +1246,9 @@ const processStoreElement = (el) => {
       el.dataset.slopChecked = 'true';
       return;
     }
-    // Synchronously claim the entire card and all its child links/capsules
+    // Synchronously claim the entire card and all its child links/capsules (P2: Target only checkable elements)
     targetCard.dataset.slopChecked = 'true';
-    targetCard.querySelectorAll('*').forEach((child) => {
+    targetCard.querySelectorAll(STORE_CHECKABLE_SELECTOR).forEach((child) => {
       child.dataset.slopChecked = 'true';
     });
     el = targetCard;
@@ -1090,8 +1257,14 @@ const processStoreElement = (el) => {
       el.dataset.slopChecked = 'true';
       return;
     }
+    saleCard.querySelectorAll('.slop-highlighted, [data-slop-appid]').forEach((child) => {
+      if (child !== saleCard) {
+        delete child.dataset.slopAppid;
+        applyAccessibleSlopStyle(child, 'none', null);
+      }
+    });
     saleCard.dataset.slopChecked = 'true';
-    saleCard.querySelectorAll('*').forEach((child) => {
+    saleCard.querySelectorAll(STORE_CHECKABLE_SELECTOR).forEach((child) => {
       child.dataset.slopChecked = 'true';
     });
     el = saleCard;
@@ -1109,7 +1282,7 @@ const processStoreElement = (el) => {
           return;
         }
         tileTarget.dataset.slopChecked = 'true';
-        tileTarget.querySelectorAll('*').forEach((child) => {
+        tileTarget.querySelectorAll(STORE_CHECKABLE_SELECTOR).forEach((child) => {
           child.dataset.slopChecked = 'true';
         });
         el = tileTarget;
@@ -1126,7 +1299,7 @@ const processStoreElement = (el) => {
   // 5. Do not treat multi-game container sections (e.g. calendar day columns, carousel tracks) as a single game capsule
   if (
     !el.matches(
-      '.home_content.single, .home_content_single_ctn, [class*="StoreSaleWidgetOuterContainer"], .StoreSaleWidgetOuterContainer, .store_main_capsule'
+      '.home_content.single, .home_content_single_ctn, [class*="StoreSaleWidgetOuterContainer"], .StoreSaleWidgetOuterContainer, [data-key="hover div"], .store_main_capsule, .cHqcdcYARwo-, [role="button"]:has([class*="AppVideoCtn"])'
     )
   ) {
     const childCapsules = el.querySelectorAll(
@@ -1166,12 +1339,12 @@ const processStoreElement = (el) => {
 
   el.dataset.slopChecked = 'true';
   el.dataset.slopAppid = primaryAppId;
-  el.dataset.dsAppid = appId;
+  if (el.dataset.dsAppid) el.dataset.dsAppid = appId;
 
   // Use checkMultipleAppIds to handle bundles / comma-separated AppIDs (e.g. F1 25)
   checkMultipleAppIds(appId).then((data) => {
     if (data && data.value) {
-      if (!shouldFlagGame(data.categories, filterSettings)) {
+      if (!shouldFlagGame(data.categories, filterSettings, data)) {
         return;
       }
       applyAccessibleSlopStyle(el, currentMode, data);
@@ -1201,13 +1374,40 @@ const handleStorePage = () => {
       }
 
       const classification = classifyAiDisclosure(details);
+      const isEarlyAccess = Boolean(document.querySelector('#earlyAccessHeader, .early_access_header'));
+      const isComingSoon = Boolean(
+        document.querySelector('.game_area_comingsoon') ||
+        Array.from(document.querySelectorAll('.game_area_purchase_game h1')).some((h) =>
+          /^Pre-Purchase\b/i.test((h.textContent || '').trim())
+        )
+      );
+      const isEarlyOrPreRelease = isEarlyAccess || isComingSoon;
+      const isToleratedOnly = isToleratedCategoryOnly(classification.categories);
+      const themeColor = isEarlyOrPreRelease ? '#9c27b0' : isToleratedOnly ? '#1976d2' : '#d32f2f';
+
+      if (currentPageAppId && !memoryCache.has(currentPageAppId)) {
+        const pageEntry = { ...classification, isEarlyAccess, isComingSoon, ts: Date.now() };
+        memoryCache.set(currentPageAppId, pageEntry);
+        chrome.storage.local.set({ [`slop_cache_v3_${currentPageAppId}`]: pageEntry });
+      }
 
       const titleHeader = document.querySelector('.apphub_AppName');
-      if (titleHeader && !titleHeader.querySelector('.slop-title-badge')) {
-        const titleBadge = document.createElement('span');
-        titleBadge.className = 'slop-title-badge';
-        titleBadge.setAttribute('role', 'status');
-        const isToleratedOnly = isToleratedCategoryOnly(classification.categories);
+      let titleBadge = titleHeader ? titleHeader.querySelector('.slop-title-badge') : null;
+
+      if (!shouldFlagGame(classification.categories, filterSettings, { isEarlyAccess, isComingSoon })) {
+        const existingBanner = document.getElementById('slop-warning-banner');
+        if (existingBanner) existingBanner.remove();
+        if (titleBadge) titleBadge.remove();
+        return true;
+      }
+
+      if (titleHeader) {
+        if (!titleBadge) {
+          titleBadge = document.createElement('span');
+          titleBadge.className = 'slop-title-badge';
+          titleBadge.setAttribute('role', 'status');
+          titleHeader.appendChild(titleBadge);
+        }
         const tagText = formatCategoryTag(classification.categories);
         titleBadge.textContent = `[${tagText}]`;
         Object.assign(titleBadge.style, {
@@ -1216,20 +1416,17 @@ const handleStorePage = () => {
           fontWeight: 'bold',
           marginLeft: '12px',
           verticalAlign: 'middle',
-          color: isToleratedOnly ? '#64b5f6' : '#ff8a80',
-          backgroundColor: isToleratedOnly ? 'rgba(25,118,210,0.25)' : 'rgba(211,47,47,0.25)',
-          border: `1px solid ${isToleratedOnly ? '#1976d2' : '#d32f2f'}`,
+          color: isEarlyOrPreRelease ? '#ce93d8' : isToleratedOnly ? '#64b5f6' : '#ff8a80',
+          backgroundColor: isEarlyOrPreRelease
+            ? 'rgba(156,39,176,0.28)'
+            : isToleratedOnly
+              ? 'rgba(25,118,210,0.25)'
+              : 'rgba(211,47,47,0.25)',
+          border: `1px solid ${themeColor}`,
           padding: '2px 8px',
           borderRadius: '3px',
           letterSpacing: '0.4px',
         });
-        titleHeader.appendChild(titleBadge);
-      }
-
-      if (!shouldFlagGame(classification.categories, filterSettings)) {
-        const existingBanner = document.getElementById('slop-warning-banner');
-        if (existingBanner) existingBanner.remove();
-        return true;
       }
 
       if (document.getElementById('slop-warning-banner')) return true;
@@ -1244,11 +1441,10 @@ const handleStorePage = () => {
         banner.id = 'slop-warning-banner';
         banner.setAttribute('role', 'alert');
 
-        const isToleratedOnly = isToleratedCategoryOnly(classification.categories);
-        const themeColor = isToleratedOnly ? '#1976d2' : '#d32f2f';
-
         Object.assign(banner.style, {
-          background: 'linear-gradient(90deg, rgba(30,15,15,0.95) 5%, rgba(20,16,18,0.95) 95%)',
+          background: isEarlyOrPreRelease
+            ? 'linear-gradient(90deg, rgba(32,14,38,0.95) 5%, rgba(20,14,26,0.95) 95%)'
+            : 'linear-gradient(90deg, rgba(30,15,15,0.95) 5%, rgba(20,16,18,0.95) 95%)',
           border: `2px solid ${themeColor}`,
           padding: '14px 16px',
           marginBottom: '16px',
@@ -1326,8 +1522,11 @@ const initUniversalStoreObserver = () => {
     '.home_content_single_ctn:not([data-slop-checked])',
     '[class*="StoreSaleWidgetOuterContainer"]:not([data-slop-checked])',
     '.StoreSaleWidgetOuterContainer:not([data-slop-checked])',
+    '[data-key="hover div"]:not([data-slop-checked])',
     '[class*="capsule_index_"]:not([data-slop-checked])',
     '#StoreTemplate [role="button"]:not([data-slop-checked])',
+    '.cHqcdcYARwo-:not([data-slop-checked])',
+    '[role="button"]:has([class*="AppVideoCtn"]):not([data-slop-checked])',
     '.sale_capsule:not([data-slop-checked])',
     '.store_capsule:not([data-slop-checked])',
     '.carousel_thumb:not([data-slop-checked])',
@@ -1377,6 +1576,15 @@ const initUniversalStoreObserver = () => {
       for (let i = 0; i < m.addedNodes.length; i++) {
         const node = m.addedNodes[i];
         if (node.nodeType === Node.ELEMENT_NODE) {
+          if (
+            node.classList?.contains('slop-badge') ||
+            node.classList?.contains('slop-tint-overlay') ||
+            node.classList?.contains('slop-title-badge') ||
+            node.id === 'slop-warning-banner' ||
+            node.id === 'slop-mode-filter'
+          ) {
+            continue;
+          }
           pendingNodes.add(node);
         }
       }
@@ -1491,6 +1699,8 @@ const addfilterModePanel = () => {
     { key: 'ignoreCode', label: 'Ignore Code / Tools' },
     { key: 'ignoreConceptArt', label: 'Ignore Concept Art' },
     { key: 'ignoreMarketing', label: 'Ignore Marketing/Capsule' },
+    { key: 'ignoreEarlyAccess', label: 'Ignore Early Access' },
+    { key: 'ignorePreRelease', label: 'Ignore Pre-Release' },
   ];
 
   exceptions.forEach((exc, index) => {
@@ -1602,44 +1812,36 @@ const startExtension = () => {
 // Start observers immediately so search widgets and store cards are never blocked
 startExtension();
 
-// Pre-warm in-memory cache from local storage in a single non-blocking bulk read
-chrome.storage.local.get(null, (items) => {
-  if (chrome.runtime.lastError || !items) return;
-  for (const [k, v] of Object.entries(items)) {
-    if (k.startsWith('slop_cache_v3_')) {
-      const appId = k.slice(14);
-      if (v && v.ts && Date.now() - v.ts <= CACHE_TTL) {
-        memoryCache.set(appId, v);
-      }
-    }
-  }
-});
-
 // Hydrate settings asynchronously from sync storage
-chrome.storage.sync.get(
-  ['filterMode', 'ignoreLocalization', 'ignoreCode', 'ignoreConceptArt', 'ignoreMarketing'],
-  (res) => {
-    if (chrome.runtime.lastError || !res) return;
-    if (res.filterMode) currentMode = res.filterMode;
-    ['ignoreLocalization', 'ignoreCode', 'ignoreConceptArt', 'ignoreMarketing'].forEach((key) => {
-      if (res[key] !== undefined) filterSettings[key] = Boolean(res[key]);
+const EXCEPTION_KEYS = [
+  'ignoreLocalization',
+  'ignoreCode',
+  'ignoreConceptArt',
+  'ignoreMarketing',
+  'ignoreEarlyAccess',
+  'ignorePreRelease',
+];
+
+chrome.storage.sync.get(['filterMode', ...EXCEPTION_KEYS], (res) => {
+  if (chrome.runtime.lastError || !res) return;
+  if (res.filterMode) currentMode = res.filterMode;
+  EXCEPTION_KEYS.forEach((key) => {
+    if (res[key] !== undefined) filterSettings[key] = Boolean(res[key]);
+  });
+
+  const panel = document.getElementById('slop-mode-filter');
+  if (panel) {
+    panel.querySelectorAll('.tab_filter_control_row[data-param="slop_mode"]').forEach((el) => {
+      el.classList.toggle('checked', el.dataset.value === currentMode);
     });
-
-    const panel = document.getElementById('slop-mode-filter');
-    if (panel) {
-      panel.querySelectorAll('.tab_filter_control_row[data-param="slop_mode"]').forEach((el) => {
-        el.classList.toggle('checked', el.dataset.value === currentMode);
-      });
-      panel.querySelectorAll('.tab_filter_control_row:not([data-param="slop_mode"])').forEach((el, idx) => {
-        const keys = ['ignoreLocalization', 'ignoreCode', 'ignoreConceptArt', 'ignoreMarketing'];
-        const k = keys[idx];
-        if (k) el.classList.toggle('checked', Boolean(filterSettings[k]));
-      });
-    }
-
-    reapplyStylesAcrossPage();
+    panel.querySelectorAll('.tab_filter_control_row:not([data-param="slop_mode"])').forEach((el, idx) => {
+      const k = EXCEPTION_KEYS[idx];
+      if (k) el.classList.toggle('checked', Boolean(filterSettings[k]));
+    });
   }
-);
+
+  reapplyStylesAcrossPage();
+});
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName === 'sync') {
@@ -1648,7 +1850,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       currentMode = changes.filterMode.newValue;
       shouldReapply = true;
     }
-    ['ignoreLocalization', 'ignoreCode', 'ignoreConceptArt', 'ignoreMarketing'].forEach((key) => {
+    EXCEPTION_KEYS.forEach((key) => {
       if (changes[key] !== undefined) {
         filterSettings[key] = Boolean(changes[key].newValue);
         shouldReapply = true;

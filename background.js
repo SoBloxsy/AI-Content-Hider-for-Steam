@@ -1,21 +1,16 @@
-let pendingChecked = 0;
-let pendingFlagged = 0;
+let statsCache = { totalChecked: 0, totalFlagged: 0 };
+let isStatsLoaded = false;
 let statsCommitTimer = null;
 
-const commitStats = () => {
-  if (pendingChecked === 0 && pendingFlagged === 0) return;
-  const incChecked = pendingChecked;
-  const incFlagged = pendingFlagged;
-  pendingChecked = 0;
-  pendingFlagged = 0;
+chrome.storage.local.get(['stats'], (result) => {
+  if (result?.stats) {
+    statsCache = result.stats;
+  }
+  isStatsLoaded = true;
+});
 
-  chrome.storage.local.get(['stats'], (result) => {
-    if (chrome.runtime.lastError) return;
-    const stats = result.stats || { totalFlagged: 0, totalChecked: 0 };
-    stats.totalChecked += incChecked;
-    stats.totalFlagged += incFlagged;
-    chrome.storage.local.set({ stats });
-  });
+const persistStats = () => {
+  chrome.storage.local.set({ stats: statsCache });
 };
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -35,38 +30,44 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'incrementStats') {
-    pendingChecked += message.checked || 0;
-    pendingFlagged += message.flagged || 0;
+    statsCache.totalChecked += message.checked || 0;
+    statsCache.totalFlagged += message.flagged || 0;
 
     if (!statsCommitTimer) {
       statsCommitTimer = setTimeout(() => {
         statsCommitTimer = null;
-        commitStats();
+        persistStats();
       }, 1000);
     }
   }
 
   if (message.type === 'getStats') {
-    commitStats();
-    chrome.storage.local.get(['stats'], (result) => {
-      if (chrome.runtime.lastError) {
-        sendResponse({ totalFlagged: 0, totalChecked: 0 });
-        return;
-      }
-      sendResponse(result.stats || { totalFlagged: 0, totalChecked: 0 });
-    });
-    return true; // keep channel open for async sendResponse
+    if (statsCommitTimer) {
+      clearTimeout(statsCommitTimer);
+      statsCommitTimer = null;
+      persistStats();
+    }
+    if (!isStatsLoaded) {
+      chrome.storage.local.get(['stats'], (result) => {
+        if (result?.stats) {
+          statsCache = result.stats;
+        }
+        isStatsLoaded = true;
+        sendResponse(statsCache);
+      });
+      return true;
+    }
+    sendResponse(statsCache);
   }
 
   if (message.type === 'resetStats') {
-    pendingChecked = 0;
-    pendingFlagged = 0;
-    chrome.storage.local.set({ stats: { totalFlagged: 0, totalChecked: 0 } }, () => {
-      if (chrome.runtime.lastError) {
-        sendResponse(false);
-        return;
-      }
-      sendResponse(true);
+    if (statsCommitTimer) {
+      clearTimeout(statsCommitTimer);
+      statsCommitTimer = null;
+    }
+    statsCache = { totalChecked: 0, totalFlagged: 0 };
+    chrome.storage.local.set({ stats: statsCache }, () => {
+      sendResponse(!chrome.runtime.lastError);
     });
     return true;
   }

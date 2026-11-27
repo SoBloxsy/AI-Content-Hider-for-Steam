@@ -6,6 +6,8 @@ const settingKeys = [
   'ignoreCode',
   'ignoreConceptArt',
   'ignoreMarketing',
+  'ignoreEarlyAccess',
+  'ignorePreRelease',
 ];
 
 chrome.storage.sync.get(settingKeys, (result) => {
@@ -19,6 +21,8 @@ chrome.storage.sync.get(settingKeys, (result) => {
     'ignore-code': 'ignoreCode',
     'ignore-concept-art': 'ignoreConceptArt',
     'ignore-marketing': 'ignoreMarketing',
+    'ignore-early-access': 'ignoreEarlyAccess',
+    'ignore-pre-release': 'ignorePreRelease',
   };
 
   for (const [elementId, key] of Object.entries(checkboxMap)) {
@@ -45,6 +49,8 @@ bindCheckbox('ignore-localization', 'ignoreLocalization');
 bindCheckbox('ignore-code', 'ignoreCode');
 bindCheckbox('ignore-concept-art', 'ignoreConceptArt');
 bindCheckbox('ignore-marketing', 'ignoreMarketing');
+bindCheckbox('ignore-early-access', 'ignoreEarlyAccess');
+bindCheckbox('ignore-pre-release', 'ignorePreRelease');
 
 // -- Clear cache --
 
