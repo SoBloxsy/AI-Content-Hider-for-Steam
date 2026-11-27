@@ -1,0 +1,37 @@
+[plugin]
+id = "com.steamai.disclosurefilter"
+name = "AI Generated Content Filter for Steam"
+version = "3.5.1"
+author = "Steam AI Filter"
+description = "Label, highlight, or hide Steam games based on their AI-generated content disclosures."
+
+[assets]
+resources = ["resources/**/*"]
+
+[backend]
+entry = "backend/main.lua"
+sources = ["backend/**/*.lua"]
+
+[frontend]
+entry = "frontend/index.tsx"
+
+[webkit]
+entry = "webview/preload.ts"
+
+[compiler]
+output_path = "./dist/steam-ai-disclosure-filter.star"
+
+[dev]
+auto_restart = true
+reload_steamui_when = "both"
+
+[inspect]
+depth = 4
+colors = true
+show_hidden = true
+
+[logger]
+padding = 0
+backend_prefix = "BCK"
+frontend_prefix = "FRT"
+webview_prefix = "WEB"

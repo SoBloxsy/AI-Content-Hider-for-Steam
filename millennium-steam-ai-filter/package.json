@@ -1,0 +1,15 @@
+{
+  "name": "millennium-steam-ai-filter",
+  "version": "3.5.1",
+  "private": true,
+  "scripts": {
+    "dev": "starlight watch",
+    "build": "node -e \"const fs = require('fs'); if (!fs.existsSync('dist')) fs.mkdirSync('dist');\" && starlight pack --release",
+    "prepare": "starlight lsp"
+  },
+  "devDependencies": {
+    "@steambrew/starlight": "^1.1.3",
+    "@types/react": "19.1.1",
+    "@types/react-dom": "19.1.1"
+  }
+}

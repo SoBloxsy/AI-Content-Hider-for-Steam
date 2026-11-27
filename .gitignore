@@ -4,3 +4,6 @@
 build.js
 *.bak
 build/
+node_modules/
+dist/
+.millennium/
