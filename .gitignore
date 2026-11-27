@@ -2,3 +2,5 @@
 *.zip
 .agents
 build.js
+*.bak
+build/

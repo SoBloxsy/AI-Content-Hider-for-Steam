@@ -1,26 +1,61 @@
-// -- Mode selection --
+// -- Mode selection & Settings --
 
-chrome.storage.sync.get(['filterMode'], (result) => {
+const settingKeys = [
+  'filterMode',
+  'ignoreLocalization',
+  'ignoreCode',
+  'ignoreConceptArt',
+  'ignoreMarketing',
+  'ignoreEarlyAccess',
+  'ignorePreRelease',
+];
+
+chrome.storage.sync.get(settingKeys, (result) => {
   if (chrome.runtime.lastError) return;
   const mode = result.filterMode || 'text';
   const radio = document.querySelector(`input[value="${mode}"]`);
   if (radio) radio.checked = true;
+
+  const checkboxMap = {
+    'ignore-localization': 'ignoreLocalization',
+    'ignore-code': 'ignoreCode',
+    'ignore-concept-art': 'ignoreConceptArt',
+    'ignore-marketing': 'ignoreMarketing',
+    'ignore-early-access': 'ignoreEarlyAccess',
+    'ignore-pre-release': 'ignorePreRelease',
+  };
+
+  for (const [elementId, key] of Object.entries(checkboxMap)) {
+    const el = document.getElementById(elementId);
+    if (el) {
+      el.checked = Boolean(result[key]);
+    }
+  }
 });
 
 document.querySelectorAll('input[name="mode"]').forEach((input) => {
   input.addEventListener('change', (e) => {
-    chrome.storage.sync.set({ filterMode: e.target.value }, () => {
-      if (chrome.runtime.lastError) return;
-      chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
-        if (tabs[0]) chrome.tabs.reload(tabs[0].id);
-      });
-    });
+    chrome.storage.sync.set({ filterMode: e.target.value });
   });
 });
+
+const bindCheckbox = (elementId, storageKey) => {
+  document.getElementById(elementId)?.addEventListener('change', (e) => {
+    chrome.storage.sync.set({ [storageKey]: e.target.checked });
+  });
+};
+
+bindCheckbox('ignore-localization', 'ignoreLocalization');
+bindCheckbox('ignore-code', 'ignoreCode');
+bindCheckbox('ignore-concept-art', 'ignoreConceptArt');
+bindCheckbox('ignore-marketing', 'ignoreMarketing');
+bindCheckbox('ignore-early-access', 'ignoreEarlyAccess');
+bindCheckbox('ignore-pre-release', 'ignorePreRelease');
 
 // -- Clear cache --
 
 document.getElementById('clear-cache')?.addEventListener('click', (e) => {
+  e.preventDefault();
   chrome.storage.local.get(null, (items) => {
     if (chrome.runtime.lastError) return;
     const keys = Object.keys(items).filter((key) => key.startsWith('slop_cache_'));
@@ -32,10 +67,6 @@ document.getElementById('clear-cache')?.addEventListener('click', (e) => {
       setTimeout(() => {
         btn.innerText = originalText;
       }, 1000);
-
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (tabs[0]) chrome.tabs.reload(tabs[0].id);
-      });
     });
   });
 });
@@ -62,32 +93,12 @@ document.getElementById('reset-stats')?.addEventListener('click', (e) => {
   });
 });
 
-// -- Promo banner --
-
-chrome.storage.local.get(['promoDismissed'], (result) => {
-  if (chrome.runtime.lastError) return;
-  if (!result.promoDismissed) {
-    const banner = document.getElementById('promo-banner');
-    if (banner) banner.style.display = 'block';
-  }
+// -- External Links safe handler --
+document.querySelectorAll('a[target="_blank"]').forEach((a) => {
+  a.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (a.href && !a.href.startsWith('javascript:')) {
+      chrome.tabs.create({ url: a.href });
+    }
+  });
 });
-
-document.getElementById('promo-dismiss')?.addEventListener('click', () => {
-  chrome.storage.local.set({ promoDismissed: true });
-  const banner = document.getElementById('promo-banner');
-  if (banner) banner.style.display = 'none';
-});
-
-// -- Version link --
-
-const versionLink = document.getElementById('version-link') || document.querySelector('.version a');
-if (versionLink) {
-  const isFirefox = /Firefox/i.test(navigator.userAgent) || (typeof browser !== 'undefined' && typeof browser.runtime?.getBrowserInfo === 'function');
-  if (isFirefox) {
-    versionLink.href = 'https://addons.mozilla.org/en-US/firefox/addon/ai-content-filter-for-steam/';
-  }
-  const manifest = chrome.runtime?.getManifest?.();
-  if (manifest?.version) {
-    versionLink.textContent = `AI Generated Content Filter for Steam v${manifest.version}`;
-  }
-}

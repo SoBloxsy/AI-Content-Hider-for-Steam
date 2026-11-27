@@ -1,3 +1,17 @@
+let statsCache = { totalChecked: 0, totalFlagged: 0 };
+let isStatsLoaded = false;
+let statsCommitTimer = null;
+
+chrome.storage.local.get(['stats'], (result) => {
+  if (result?.stats) {
+    statsCache = result.stats;
+  }
+  isStatsLoaded = true;
+});
+
+const persistStats = () => {
+  chrome.storage.local.set({ stats: statsCache });
+};
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'updateBadge') {
@@ -16,33 +30,44 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'incrementStats') {
-    chrome.storage.local.get(['stats'], (result) => {
-      if (chrome.runtime.lastError) return;
-      const stats = result.stats || { totalFlagged: 0, totalChecked: 0 };
-      stats.totalChecked += message.checked || 0;
-      stats.totalFlagged += message.flagged || 0;
-      chrome.storage.local.set({ stats });
-    });
+    statsCache.totalChecked += message.checked || 0;
+    statsCache.totalFlagged += message.flagged || 0;
+
+    if (!statsCommitTimer) {
+      statsCommitTimer = setTimeout(() => {
+        statsCommitTimer = null;
+        persistStats();
+      }, 1000);
+    }
   }
 
   if (message.type === 'getStats') {
-    chrome.storage.local.get(['stats'], (result) => {
-      if (chrome.runtime.lastError) {
-        sendResponse({ totalFlagged: 0, totalChecked: 0 });
-        return;
-      }
-      sendResponse(result.stats || { totalFlagged: 0, totalChecked: 0 });
-    });
-    return true; // keep channel open for async sendResponse
+    if (statsCommitTimer) {
+      clearTimeout(statsCommitTimer);
+      statsCommitTimer = null;
+      persistStats();
+    }
+    if (!isStatsLoaded) {
+      chrome.storage.local.get(['stats'], (result) => {
+        if (result?.stats) {
+          statsCache = result.stats;
+        }
+        isStatsLoaded = true;
+        sendResponse(statsCache);
+      });
+      return true;
+    }
+    sendResponse(statsCache);
   }
 
   if (message.type === 'resetStats') {
-    chrome.storage.local.set({ stats: { totalFlagged: 0, totalChecked: 0 } }, () => {
-      if (chrome.runtime.lastError) {
-        sendResponse(false);
-        return;
-      }
-      sendResponse(true);
+    if (statsCommitTimer) {
+      clearTimeout(statsCommitTimer);
+      statsCommitTimer = null;
+    }
+    statsCache = { totalChecked: 0, totalFlagged: 0 };
+    chrome.storage.local.set({ stats: statsCache }, () => {
+      sendResponse(!chrome.runtime.lastError);
     });
     return true;
   }
